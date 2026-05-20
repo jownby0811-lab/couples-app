@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Replace body::before background SVG in both style.css files"""
+
+svg_raw = r"""<svg viewBox="0 0 380 520" xmlns="http://www.w3.org/2000/svg">
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M5,520 C-5,505 5,495 15,482 C25,470 35,460 28,445 C22,432 5,425 2,410 C-2,395 12,385 22,372 C32,360 38,348 30,333 C22,318 5,312 3,297 C1,282 15,272 25,258 C35,245 40,232 32,217 C24,203 8,197 6,182 C4,167 18,157 28,143 C38,130 42,117 34,102 C26,88 10,82 8,67 C6,53 20,42 18,25 C16,12 8,4 5,0" stroke="rgba(201,169,122,0.45)" stroke-width="2.4"/>
+<path d="M38,520 C48,505 38,495 28,482 C18,470 8,460 15,445 C21,432 38,425 40,410 C43,395 30,385 20,372 C10,360 4,348 12,333 C20,318 37,312 38,297 C40,282 26,272 16,258 C6,245 2,232 10,217 C18,203 34,197 36,182 C38,167 24,157 14,143 C4,130 0,117 8,102 C16,88 32,82 34,67 C36,53 22,42 24,25 C26,12 34,4 38,0" stroke="rgba(200,205,214,0.45)" stroke-width="2.4"/>
+<path d="M15,482 C22,478 28,482 28,482" stroke="rgba(201,169,122,0.2)" stroke-width="1"/>
+<path d="M22,445 C22,445 22,445 15,445" stroke="rgba(200,205,214,0.2)" stroke-width="1"/>
+<path d="M2,410 C12,407 22,410 22,410" stroke="rgba(201,169,122,0.18)" stroke-width="1"/>
+<path d="M22,372 C22,372 12,372 3,372" stroke="rgba(200,205,214,0.18)" stroke-width="1"/>
+<path d="M3,297 C12,294 22,297 22,297" stroke="rgba(201,169,122,0.18)" stroke-width="1"/>
+<path d="M22,258 C22,258 12,258 3,258" stroke="rgba(200,205,214,0.18)" stroke-width="1"/>
+<path d="M6,182 C15,179 25,182 25,182" stroke="rgba(201,169,122,0.16)" stroke-width="1"/>
+<path d="M25,143 C25,143 15,143 6,143" stroke="rgba(200,205,214,0.16)" stroke-width="1"/>
+<path d="M8,67 C18,64 28,67 28,67" stroke="rgba(201,169,122,0.16)" stroke-width="1"/>
+<path d="M28,25 C28,25 18,25 8,25" stroke="rgba(200,205,214,0.16)" stroke-width="1"/>
+<path d="M5,482 C-5,474 -8,477 -4,484" stroke="rgba(201,169,122,0.28)" stroke-width="1"/>
+<path d="M2,410 C-8,402 -11,405 -7,412" stroke="rgba(201,169,122,0.25)" stroke-width="1"/>
+<path d="M3,297 C-7,289 -10,292 -6,299" stroke="rgba(201,169,122,0.23)" stroke-width="0.9"/>
+<path d="M6,182 C-4,174 -7,177 -3,184" stroke="rgba(201,169,122,0.21)" stroke-width="0.9"/>
+<path d="M8,67 C-2,59 -5,62 -1,69" stroke="rgba(201,169,122,0.19)" stroke-width="0.8"/>
+<path d="M38,482 C48,474 51,477 47,484" stroke="rgba(200,205,214,0.28)" stroke-width="1"/>
+<path d="M40,410 C50,402 53,405 49,412" stroke="rgba(200,205,214,0.25)" stroke-width="1"/>
+<path d="M38,297 C48,289 51,292 47,299" stroke="rgba(200,205,214,0.23)" stroke-width="0.9"/>
+<path d="M36,182 C46,174 49,177 45,184" stroke="rgba(200,205,214,0.21)" stroke-width="0.9"/>
+<path d="M34,67 C44,59 47,62 43,69" stroke="rgba(200,205,214,0.19)" stroke-width="0.8"/>
+<path d="M22,333 C45,318 62,328 60,348 C58,366 38,370 28,358" stroke="rgba(201,169,122,0.16)" stroke-width="1.1"/>
+<path d="M22,217 C45,202 62,212 60,232 C58,250 38,254 28,242" stroke="rgba(201,169,122,0.14)" stroke-width="1"/>
+<path d="M22,102 C45,88 62,98 60,118 C58,136 38,140 28,128" stroke="rgba(201,169,122,0.13)" stroke-width="1"/>
+<path d="M20,333 C-2,318 -18,328 -18,348" stroke="rgba(200,205,214,0.15)" stroke-width="1"/>
+<path d="M20,217 C-2,202 -18,212 -18,232" stroke="rgba(200,205,214,0.13)" stroke-width="1"/>
+<path d="M20,102 C-2,88 -18,98 -18,118" stroke="rgba(200,205,214,0.12)" stroke-width="1"/>
+<path d="M375,520 C385,505 375,495 365,482 C355,470 345,460 352,445 C358,432 375,425 378,410 C382,395 368,385 358,372 C348,360 342,348 350,333 C358,318 375,312 377,297 C379,282 365,272 355,258 C345,245 340,232 348,217 C356,203 372,197 374,182 C376,167 362,157 352,143 C342,130 338,117 346,102 C354,88 370,82 372,67 C374,53 360,42 362,25 C364,12 372,4 375,0" stroke="rgba(201,169,122,0.45)" stroke-width="2.4"/>
+<path d="M342,520 C332,505 342,495 352,482 C362,470 372,460 365,445 C359,432 342,425 340,410 C337,395 350,385 360,372 C370,360 376,348 368,333 C360,318 343,312 342,297 C340,282 354,272 364,258 C374,245 378,232 370,217 C362,203 346,197 344,182 C342,167 356,157 366,143 C376,130 380,117 372,102 C364,88 348,82 346,67 C344,53 358,42 356,25 C354,12 346,4 342,0" stroke="rgba(200,205,214,0.45)" stroke-width="2.4"/>
+<path d="M365,482 C358,478 352,482 352,482" stroke="rgba(201,169,122,0.2)" stroke-width="1"/>
+<path d="M358,445 C358,445 358,445 365,445" stroke="rgba(200,205,214,0.2)" stroke-width="1"/>
+<path d="M378,410 C368,407 358,410 358,410" stroke="rgba(201,169,122,0.18)" stroke-width="1"/>
+<path d="M358,372 C358,372 368,372 377,372" stroke="rgba(200,205,214,0.18)" stroke-width="1"/>
+<path d="M377,297 C368,294 358,297 358,297" stroke="rgba(201,169,122,0.18)" stroke-width="1"/>
+<path d="M358,258 C358,258 368,258 377,258" stroke="rgba(200,205,214,0.18)" stroke-width="1"/>
+<path d="M374,182 C365,179 355,182 355,182" stroke="rgba(201,169,122,0.16)" stroke-width="1"/>
+<path d="M355,143 C355,143 365,143 374,143" stroke="rgba(200,205,214,0.16)" stroke-width="1"/>
+<path d="M372,67 C362,64 352,67 352,67" stroke="rgba(201,169,122,0.16)" stroke-width="1"/>
+<path d="M352,25 C352,25 362,25 372,25" stroke="rgba(200,205,214,0.16)" stroke-width="1"/>
+<path d="M375,482 C385,474 388,477 384,484" stroke="rgba(201,169,122,0.28)" stroke-width="1"/>
+<path d="M378,410 C388,402 391,405 387,412" stroke="rgba(201,169,122,0.25)" stroke-width="1"/>
+<path d="M377,297 C387,289 390,292 386,299" stroke="rgba(201,169,122,0.23)" stroke-width="0.9"/>
+<path d="M374,182 C384,174 387,177 383,184" stroke="rgba(201,169,122,0.21)" stroke-width="0.9"/>
+<path d="M372,67 C382,59 385,62 381,69" stroke="rgba(201,169,122,0.19)" stroke-width="0.8"/>
+<path d="M342,482 C332,474 329,477 333,484" stroke="rgba(200,205,214,0.28)" stroke-width="1"/>
+<path d="M340,410 C330,402 327,405 331,412" stroke="rgba(200,205,214,0.25)" stroke-width="1"/>
+<path d="M342,297 C332,289 329,292 333,299" stroke="rgba(200,205,214,0.23)" stroke-width="0.9"/>
+<path d="M344,182 C334,174 331,177 335,184" stroke="rgba(200,205,214,0.21)" stroke-width="0.9"/>
+<path d="M346,67 C336,59 333,62 337,69" stroke="rgba(200,205,214,0.19)" stroke-width="0.8"/>
+<path d="M358,333 C335,318 318,328 320,348 C322,366 342,370 352,358" stroke="rgba(201,169,122,0.16)" stroke-width="1.1"/>
+<path d="M358,217 C335,202 318,212 320,232 C322,250 342,254 352,242" stroke="rgba(201,169,122,0.14)" stroke-width="1"/>
+<path d="M358,102 C335,88 318,98 320,118 C322,136 342,140 352,128" stroke="rgba(201,169,122,0.13)" stroke-width="1"/>
+<path d="M360,333 C382,318 398,328 398,348" stroke="rgba(200,205,214,0.15)" stroke-width="1"/>
+<path d="M360,217 C382,202 398,212 398,232" stroke="rgba(200,205,214,0.13)" stroke-width="1"/>
+<path d="M360,102 C382,88 398,98 398,118" stroke="rgba(200,205,214,0.12)" stroke-width="1"/>
+<path d="M58,45 C58,31 67,26 70,38 C73,50 65,57 58,45Z" fill="rgba(201,169,122,0.2)" transform="rotate(-28 64 41)"/>
+<path d="M75,118 C75,104 84,99 87,111 C90,123 82,130 75,118Z" fill="rgba(201,169,122,0.17)" transform="rotate(42 81 114)"/>
+<path d="M52,195 C52,181 61,176 64,188 C67,200 59,207 52,195Z" fill="rgba(201,169,122,0.16)" transform="rotate(-52 58 191)"/>
+<path d="M82,268 C82,254 91,249 94,261 C97,273 89,280 82,268Z" fill="rgba(201,169,122,0.18)" transform="rotate(22 88 264)"/>
+<path d="M62,345 C62,331 71,326 74,338 C77,350 69,357 62,345Z" fill="rgba(201,169,122,0.15)" transform="rotate(-38 68 341)"/>
+<path d="M88,422 C88,408 97,403 100,415 C103,427 95,434 88,422Z" fill="rgba(201,169,122,0.14)" transform="rotate(55 94 418)"/>
+<path d="M108,72 C108,58 117,53 120,65 C123,77 115,84 108,72Z" fill="rgba(200,205,214,0.18)" transform="rotate(32 114 68)"/>
+<path d="M128,148 C128,134 137,129 140,141 C143,153 135,160 128,148Z" fill="rgba(200,205,214,0.16)" transform="rotate(-42 134 144)"/>
+<path d="M95,225 C95,211 104,206 107,218 C110,230 102,237 95,225Z" fill="rgba(200,205,214,0.15)" transform="rotate(52 101 221)"/>
+<path d="M118,302 C118,288 127,283 130,295 C133,307 125,314 118,302Z" fill="rgba(200,205,214,0.17)" transform="rotate(-25 124 298)"/>
+<path d="M98,378 C98,364 107,359 110,371 C113,383 105,390 98,378Z" fill="rgba(200,205,214,0.15)" transform="rotate(40 104 374)"/>
+<path d="M125,455 C125,441 134,436 137,448 C140,460 132,467 125,455Z" fill="rgba(200,205,214,0.14)" transform="rotate(-55 131 451)"/>
+<path d="M155,38 C155,24 164,19 167,31 C170,43 162,50 155,38Z" fill="rgba(201,169,122,0.14)" transform="rotate(18 161 34)"/>
+<path d="M172,488 C172,474 181,469 184,481 C187,493 179,500 172,488Z" fill="rgba(201,169,122,0.13)" transform="rotate(-33 178 484)"/>
+<path d="M322,45 C322,31 331,26 334,38 C337,50 329,57 322,45Z" fill="rgba(201,169,122,0.2)" transform="rotate(28 328 41)"/>
+<path d="M305,118 C305,104 314,99 317,111 C320,123 312,130 305,118Z" fill="rgba(201,169,122,0.17)" transform="rotate(-42 311 114)"/>
+<path d="M328,195 C328,181 337,176 340,188 C343,200 335,207 328,195Z" fill="rgba(201,169,122,0.16)" transform="rotate(52 334 191)"/>
+<path d="M298,268 C298,254 307,249 310,261 C313,273 305,280 298,268Z" fill="rgba(201,169,122,0.18)" transform="rotate(-22 304 264)"/>
+<path d="M318,345 C318,331 327,326 330,338 C333,350 325,357 318,345Z" fill="rgba(201,169,122,0.15)" transform="rotate(38 324 341)"/>
+<path d="M292,422 C292,408 301,403 304,415 C307,427 299,434 292,422Z" fill="rgba(201,169,122,0.14)" transform="rotate(-55 298 418)"/>
+<path d="M272,72 C272,58 281,53 284,65 C287,77 279,84 272,72Z" fill="rgba(200,205,214,0.18)" transform="rotate(-32 278 68)"/>
+<path d="M252,148 C252,134 261,129 264,141 C267,153 259,160 252,148Z" fill="rgba(200,205,214,0.16)" transform="rotate(42 258 144)"/>
+<path d="M285,225 C285,211 294,206 297,218 C300,230 292,237 285,225Z" fill="rgba(200,205,214,0.15)" transform="rotate(-52 291 221)"/>
+<path d="M262,302 C262,288 271,283 274,295 C277,307 269,314 262,302Z" fill="rgba(200,205,214,0.17)" transform="rotate(25 268 298)"/>
+<path d="M282,378 C282,364 291,359 294,371 C297,383 289,390 282,378Z" fill="rgba(200,205,214,0.15)" transform="rotate(-40 288 374)"/>
+<path d="M255,455 C255,441 264,436 267,448 C270,460 262,467 255,455Z" fill="rgba(200,205,214,0.14)" transform="rotate(55 261 451)"/>
+<path d="M225,38 C225,24 234,19 237,31 C240,43 232,50 225,38Z" fill="rgba(201,169,122,0.14)" transform="rotate(-18 231 34)"/>
+<path d="M208,488 C208,474 217,469 220,481 C223,493 215,500 208,488Z" fill="rgba(201,169,122,0.13)" transform="rotate(33 214 484)"/>
+<path d="M187,32 C187,18 196,13 199,25 C202,37 194,44 187,32Z" fill="rgba(201,169,122,0.12)" transform="rotate(-20 193 28)"/>
+<path d="M198,32 C198,18 207,13 210,25 C213,37 205,44 198,32Z" fill="rgba(200,205,214,0.12)" transform="rotate(20 204 28)"/>
+<path d="M187,492 C187,478 196,473 199,485 C202,497 194,504 187,492Z" fill="rgba(201,169,122,0.11)" transform="rotate(25 193 488)"/>
+<path d="M198,492 C198,478 207,473 210,485 C213,497 205,504 198,492Z" fill="rgba(200,205,214,0.11)" transform="rotate(-25 204 488)"/>
+<path d="M190,260 C190,246 199,241 202,253 C205,265 197,272 190,260Z" fill="rgba(201,169,122,0.1)" transform="rotate(35 196 256)"/>
+<path d="M200,260 C200,246 209,241 212,253 C215,265 207,272 200,260Z" fill="rgba(200,205,214,0.1)" transform="rotate(-35 206 256)"/>
+</g>
+</svg>"""
+
+# Build a single-line SVG with single quotes (safe for CSS url("..."))
+svg_single = svg_raw.replace('"', "'").replace('\n', ' ').replace('  ', ' ').strip()
+
+# Build the new body::before block
+new_before = '''body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,''' + svg_single + '''");
+  background-size: cover;
+  background-repeat: no-repeat;
+}'''
+
+print(f"New block length: {len(new_before)} chars")
+print(f"SVG single-line length: {len(svg_single)} chars")
+
+# Patch both CSS files
+for path in [
+    r'couples-app\src\style.css',
+    r'couples-app\dist\style.css',
+]:
+    with open(path, 'r', encoding='utf-8') as f:
+        css = f.read()
+
+    start = css.find('body::before')
+    if start < 0:
+        print(f"WARNING: body::before not found in {path}")
+        continue
+
+    # Find the closing } of the block
+    depth = 0
+    end = start
+    while end < len(css):
+        if css[end] == '{':
+            depth += 1
+        elif css[end] == '}':
+            depth -= 1
+            if depth == 0:
+                end += 1  # include the closing brace
+                break
+        end += 1
+
+    old_block = css[start:end]
+    css_new = css[:start] + new_before + css[end:]
+
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(css_new)
+
+    print(f"Patched {path}  ({len(old_block)} chars -> {len(new_before)} chars)")
+
+print("Done.")

@@ -1,0 +1,91 @@
+<div class="topbar">
+  <span class="menu-btn" onclick="toggleMenu()">☰</span>
+</div>
+
+<div id="menu" class="menu">
+  <a onclick="showPage('home')">Home</a>
+  <a onclick="showPage('truth')">Truth or Dare</a>
+  <a onclick="showPage('roleplay')">Roleplay</a>
+  <a onclick="showPage('positions')">Positions</a>
+  <a onclick="showPage('wheel')">Spin the Wheel</a>
+</div>
+
+<div id="home" class="section active">
+  <h1>Welcome 😏</h1>
+  <p>Select a game from the menu.</p>
+</div>
+
+<div id="truth" class="section">
+  <h1>Truth or Dare</h1>
+
+<select id="tierSelect">
+  <option value="tease">Tease 😏</option>
+  <option value="foreplay">Foreplay 🔥</option>
+  <option value="dirty">Dirty 😈</option>
+</select>
+
+<br>
+  
+  <h3 style="text-align:center;">
+  John 😎: <span id="johnScoreDisplay">0</span> 🔥 |
+  Felicity 💕: <span id="felicityScoreDisplay">0</span> 🔥
+</h3>
+  
+  <button onclick="resetGame()">New Game 🔄</button>
+
+<p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:10px;"></p>
+
+<button id="truthBtn" onclick="getTruth()">Truth</button>
+<button id="dareBtn" onclick="getDare()">Dare</button>
+  
+<p id="statusMessage" class="status-message"></p>
+  
+  <div id="pointSection" style="display:none; text-align:center; margin-top:15px;">
+  <p>💯 Award Points:</p>
+  <div id="pointButtons"></div>
+</div>
+
+ <!-- FLIP CARD -->
+<div id="todCard" class="game-card hidden-card">
+  <div class="card-inner">
+
+    <!-- FRONT -->
+    <div class="card-front">
+      <div class="card-label" id="cardLabel">Truth</div>
+      <p id="todResult"></p>
+    </div>
+
+    <!-- BACK -->
+    <div class="card-back">
+      <h3>Answers</h3>
+      <div id="answerReveal"></div>
+    </div>
+
+  </div>
+</div>
+
+<div id="passFailSection" style="display:none; text-align:center; margin-top:15px;">
+  <p>Did they answer it?</p>
+  <button onclick="passTruth()">Pass ✅</button>
+  <button onclick="failTruth()">Fail ❌</button>
+</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="roleplay" class="section">
+  <h1>Roleplay</h1>
+  <p>Coming soon 👀</p>
+</div>
+
+<div id="positions" class="section">
+  <h1>Positions</h1>
+  <p>Coming soon 😏</p>
+</div>
+
+<div id="wheel" class="section">
+  <h1>Spin the Wheel</h1>
+  <button onclick="spin()">Spin</button>
+  <p id="result" class="result-text"></p>
+</div>
