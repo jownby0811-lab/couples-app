@@ -386,7 +386,78 @@
 
 <div id="positions" class="section">
   <h1>Positions</h1>
-  <p>Coming soon 😏</p>
+
+  <div class="pos-progress">
+    <div class="pos-progress-labels">
+      <span>Novice</span>
+      <span id="posProgressText">0 of 25 tried</span>
+      <span>Master</span>
+    </div>
+    <div class="pos-progress-bar">
+      <div id="posProgressFill" class="pos-progress-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <div class="pos-section-title">Tonight's Pick 🎲</div>
+  <div id="tonightsPick" class="pos-featured-card">
+    <div class="pos-featured-name" id="tonightsPickName">Loading...</div>
+    <div class="pos-featured-meta">
+      <span id="tonightsPickVibe" class="pos-vibe-badge"></span>
+      <span id="tonightsPickDots" class="pos-difficulty-dots"></span>
+    </div>
+  </div>
+
+  <div class="pos-section-title">Browse</div>
+  <div class="pos-browse-list">
+    <div class="pos-browse-row active" data-browse="all" onclick="setPosFilter('browse','all')">
+      <span>All Positions</span><span class="pos-count" id="countAll">25</span>
+    </div>
+    <div class="pos-browse-row" data-browse="favorites" onclick="setPosFilter('browse','favorites')">
+      <span>❤️ Favorites</span><span class="pos-count" id="countFavorites">0</span>
+    </div>
+    <div class="pos-browse-row" data-browse="todo" onclick="setPosFilter('browse','todo')">
+      <span>📌 To Do</span><span class="pos-count" id="countTodo">0</span>
+    </div>
+    <div class="pos-browse-row" data-browse="tried" onclick="setPosFilter('browse','tried')">
+      <span>✅ Already Tried</span><span class="pos-count" id="countTried">0</span>
+    </div>
+  </div>
+
+  <div class="pos-section-title">Filter By</div>
+  <div class="pos-filter-group">
+    <div class="pos-filter-label">Category</div>
+    <div class="pos-filter-chips" id="filterCategory"></div>
+    <div class="pos-filter-label">Difficulty</div>
+    <div class="pos-filter-chips" id="filterDifficulty"></div>
+    <div class="pos-filter-label">Vibe</div>
+    <div class="pos-filter-chips" id="filterVibe"></div>
+  </div>
+
+  <button onclick="drawRandomPosition()" style="margin:20px 0 4px;width:100%;">Draw Random 🎲</button>
+
+  <div id="positionsList" class="pos-list"></div>
+
+  <div id="positionModal" class="pos-modal hidden">
+    <div class="pos-modal-card">
+      <button class="pos-close-btn" onclick="closePositionCard()">✕</button>
+      <div class="pos-modal-name" id="modalName"></div>
+      <div class="pos-modal-meta">
+        <span id="modalVibe" class="pos-vibe-badge"></span>
+        <span id="modalDots" class="pos-difficulty-dots"></span>
+        <span id="modalCategory" class="pos-category-badge"></span>
+      </div>
+      <p id="modalDescription" class="pos-modal-desc"></p>
+      <div class="pos-tips-box">
+        <span class="pos-tips-label">💡 Tip</span>
+        <p id="modalTips"></p>
+      </div>
+      <div class="pos-toggle-buttons">
+        <button id="btnTried"    onclick="togglePositionState('tried')">✅ Tried</button>
+        <button id="btnFavorite" onclick="togglePositionState('favorite')">❤️ Fave</button>
+        <button id="btnTodo"     onclick="togglePositionState('todo')">📌 To Do</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="wheel" class="section">
