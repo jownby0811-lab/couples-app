@@ -1,3 +1,307 @@
+<div id="onboarding" class="onboarding-overlay">
+  <div class="onboarding-card">
+    <!-- Replace this SVG with your helix+heart design -->
+    <svg class="helix-svg" viewBox="0 0 340 130" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="gg" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.8" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="ss" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.8" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="hg" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <!-- Strong glow for heart strands -->
+        <filter id="hgg" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="3.5" result="blur"/>
+          <feColorMatrix in="blur" type="matrix" values="1 0.6 0 0 0.1  0.6 0.4 0 0 0.05  0 0 0.2 0 0  0 0 0 1.2 0" result="goldBlur"/>
+          <feMerge><feMergeNode in="goldBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="ssg" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="3.5" result="blur"/>
+          <feColorMatrix in="blur" type="matrix" values="0.6 0.6 0.8 0 0  0.6 0.7 0.8 0 0  0.6 0.7 1 0 0.1  0 0 0 1.2 0" result="silverBlur"/>
+          <feMerge><feMergeNode in="silverBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <radialGradient id="heartfill" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="rgba(201,169,122,0.12)"/>
+          <stop offset="100%" stop-color="rgba(201,169,122,0)"/>
+        </radialGradient>
+      </defs>
+ 
+      <!-- ============================================================
+           LEFT SECTION: organic double helix x=0 to x=132
+           Gold: breathes wider, irregular rhythm, wild tendrils
+           Silver: opposite phase, slightly tighter, different character
+      ============================================================ -->
+ 
+      <!-- GOLD left — irregular sinusoid, tapers near heart -->
+      <path d="M-2,36
+               C5,36 10,18 16,15
+               C22,12 27,20 32,32
+               C36,42 40,52 48,56
+               C56,60 62,52 66,40
+               C70,28 74,14 82,12
+               C90,10 94,22 98,36"
+            stroke="rgba(201,169,122,0.92)" stroke-width="2.3" fill="none"
+            stroke-linecap="round" filter="url(#gg)"/>
+      <!-- Gold left taper -->
+      <path d="M98,36 C102,50 106,62 114,64 C120,65 126,56 130,44 C133,38 136,37 140,38"
+            stroke="rgba(201,169,122,0.45)" stroke-width="1.3" fill="none"
+            stroke-linecap="round" filter="url(#gg)"/>
+ 
+      <!-- SILVER left — opposite rhythm, tapers near heart -->
+      <path d="M-2,36
+               C5,36 10,54 16,57
+               C22,60 27,52 32,40
+               C36,30 40,20 48,16
+               C56,12 62,20 66,32
+               C70,44 74,58 82,60
+               C90,62 94,50 98,36"
+            stroke="rgba(200,205,214,0.92)" stroke-width="2.3" fill="none"
+            stroke-linecap="round" filter="url(#ss)"/>
+      <!-- Silver left taper -->
+      <path d="M98,36 C102,22 106,10 114,8 C120,7 126,16 130,28 C133,34 136,36 140,38"
+            stroke="rgba(200,205,214,0.45)" stroke-width="1.3" fill="none"
+            stroke-linecap="round" filter="url(#ss)"/>
+ 
+      <!-- Crossing connectors left — where strands pass through each other -->
+      <path d="M26,36 C27,33 28,30 29,36 C30,42 29,45 28,42 C27,39 27,36 26,36" stroke="rgba(201,169,122,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M60,36 C61,33 62,30 63,36 C64,42 63,45 62,42 C61,39 61,36 60,36" stroke="rgba(200,205,214,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M83,36 C84,33 85,30 86,36 C87,42 86,45 85,42 C84,39 84,36 83,36" stroke="rgba(201,169,122,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M112,36 C113,33 114,30 115,36 C116,42 115,45 114,42 C113,39 113,36 112,36" stroke="rgba(200,205,214,0.25)" stroke-width="0.7" fill="none"/>
+ 
+      <!-- Wild organic tendrils off GOLD left — irregular, some curl back -->
+      <!-- At peak near x=13,y=19 -->
+      <path d="M13,19 C10,10 4,8 2,14 C0,20 5,24 11,22 C16,20 16,14 13,19" stroke="rgba(201,169,122,0.38)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <!-- At peak near x=71,y=15 — bigger wilder curl -->
+      <path d="M71,15 C68,5 60,2 56,9 C52,16 57,23 65,21 C72,19 73,11 68,8 C63,5 57,9 60,16" stroke="rgba(201,169,122,0.32)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <!-- At peak near x=123,y=17 -->
+      <path d="M123,17 C120,8 114,6 112,12 C110,18 115,22 121,20" stroke="rgba(201,169,122,0.35)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <!-- Small wispy tendril off gold at trough x=36,y=50 going down -->
+      <path d="M36,50 C33,58 28,62 24,58 C20,54 23,48 28,50" stroke="rgba(201,169,122,0.25)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Wild organic tendrils off SILVER left -->
+      <!-- At trough x=13,y=53 -->
+      <path d="M13,53 C10,62 4,64 2,58 C0,52 5,48 11,50 C16,52 16,58 13,53" stroke="rgba(200,205,214,0.38)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <!-- At trough x=71,y=57 — bigger curl -->
+      <path d="M71,57 C68,67 60,70 56,63 C52,56 57,49 65,51 C72,53 73,61 68,64 C63,67 57,63 60,56" stroke="rgba(200,205,214,0.32)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <!-- Small wispy off silver peak x=50,y=17 going up -->
+      <path d="M50,17 C53,9 58,6 60,12 C62,18 58,22 54,20" stroke="rgba(200,205,214,0.28)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Thorns GOLD left — sharp little spurs at irregular intervals -->
+      <path d="M8,22 C4,16 2,18 5,23" stroke="rgba(201,169,122,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M18,20 C22,14 24,16 21,21" stroke="rgba(201,169,122,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M45,55 C41,61 39,59 42,54" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M65,17 C61,11 59,13 62,18" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M76,14 C80,8 82,10 79,15" stroke="rgba(201,169,122,0.5)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M102,60 C98,66 96,64 99,59" stroke="rgba(201,169,122,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M118,18 C114,12 112,14 115,19" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Thorns SILVER left -->
+      <path d="M8,50 C4,56 2,54 5,49" stroke="rgba(200,205,214,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M18,52 C22,58 24,56 21,51" stroke="rgba(200,205,214,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M45,17 C41,11 39,13 42,18" stroke="rgba(200,205,214,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M80,56 C84,62 86,60 83,55" stroke="rgba(200,205,214,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M118,54 C122,60 124,58 121,53" stroke="rgba(200,205,214,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Petals LEFT — organic teardrop shapes at various angles -->
+      <path d="M4,26 C4,16 11,12 13,20 C15,28 9,32 4,26Z" fill="rgba(201,169,122,0.22)" transform="rotate(-32 8 22)"/>
+      <path d="M4,46 C4,56 -3,60 -5,52 C-7,44 -1,40 4,46Z" fill="rgba(200,205,214,0.2)" transform="rotate(18 0 50)"/>
+      <path d="M55,13 C55,3 62,-1 64,7 C66,15 60,19 55,13Z" fill="rgba(201,169,122,0.2)" transform="rotate(22 59 9)"/>
+      <path d="M36,56 C36,66 29,70 27,62 C25,54 31,50 36,56Z" fill="rgba(200,205,214,0.18)" transform="rotate(-12 31 60)"/>
+      <path d="M97,63 C97,73 90,77 88,69 C86,61 92,57 97,63Z" fill="rgba(201,169,122,0.17)" transform="rotate(40 91 67)"/>
+      <path d="M97,10 C97,0 104,-4 106,4 C108,12 102,16 97,10Z" fill="rgba(200,205,214,0.17)" transform="rotate(-38 101 6)"/>
+ 
+      <!-- ============================================================
+           HEART SECTION: x=140 to x=200
+           Both strands arrive at x=140,y=38
+           Gold coils organically into left lobe
+           Silver coils into right lobe  
+           They meet at heart tip x=170,y=100
+           then regroup at x=200,y=38
+      ============================================================ -->
+ 
+      <!-- Soft heart fill glow -->
+      <path d="M170,78 C160,70 140,58 137,46 C134,34 139,22 149,18 C159,14 168,21 170,32 C172,21 181,14 191,18 C201,22 206,34 203,46 C200,58 180,70 170,78Z"
+            fill="url(#heartfill)" stroke="none"/>
+ 
+      <!-- GOLD left lobe — organic wandering curve UP then V down -->
+      <path d="M140,38
+               C136,28 135,18 140,12
+               C145,6 154,5 160,10
+               C165,15 168,24 169,33
+               C170,38 170,40 170,42"
+            stroke="rgba(201,169,122,1)" stroke-width="4" fill="none"
+            stroke-linecap="round" filter="url(#hgg)"/>
+      <!-- GOLD V \ — shorter, gentle angle inward to tip -->
+      <path d="M140,38 C146,50 154,60 160,68 C164,74 167,76 170,78"
+            stroke="rgba(201,169,122,1)" stroke-width="3.8" fill="none"
+            stroke-linecap="round" filter="url(#hgg)"/>
+ 
+      <!-- SILVER right lobe — organic wandering curve UP then V down -->
+      <path d="M200,38
+               C204,28 205,18 200,12
+               C195,6 186,5 180,10
+               C175,15 172,24 171,33
+               C170,38 170,40 170,42"
+            stroke="rgba(200,205,214,1)" stroke-width="4" fill="none"
+            stroke-linecap="round" filter="url(#ssg)"/>
+      <!-- SILVER V / — shorter, gentle angle inward to tip -->
+      <path d="M200,38 C194,50 186,60 180,68 C176,74 173,76 170,78"
+            stroke="rgba(200,205,214,1)" stroke-width="3.8" fill="none"
+            stroke-linecap="round" filter="url(#ssg)"/>
+ 
+      <!-- Extra wrap strands on lobes — the helix character continues into heart -->
+      <path d="M140,38 C139,28 140,16 146,11 C152,6 160,8 165,15 C169,21 170,30 170,38"
+            stroke="rgba(201,169,122,0.45)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M200,38 C201,28 200,16 194,11 C188,6 180,8 175,15 C171,21 170,30 170,38"
+            stroke="rgba(200,205,214,0.45)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Cross-wrap connectors on heart lobes — where the two strands interweave -->
+      <path d="M144,18 C150,14 158,13 164,17" stroke="rgba(201,169,122,0.28)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+      <path d="M141,28 C147,24 156,23 163,27" stroke="rgba(201,169,122,0.22)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+      <path d="M196,18 C190,14 182,13 176,17" stroke="rgba(200,205,214,0.28)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+      <path d="M199,28 C193,24 184,23 177,27" stroke="rgba(200,205,214,0.22)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+      <path d="M141,38 C146,34 155,33 162,36" stroke="rgba(201,169,122,0.2)" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+      <path d="M199,38 C194,34 185,33 178,36" stroke="rgba(200,205,214,0.2)" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Wild organic tendrils off heart lobes -->
+      <path d="M142,22 C136,14 129,14 128,21 C127,28 133,32 139,28" stroke="rgba(201,169,122,0.3)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <path d="M198,22 C204,14 211,14 212,21 C213,28 207,32 201,28" stroke="rgba(200,205,214,0.3)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <path d="M155,8 C152,0 146,-2 144,5 C142,12 147,16 153,14" stroke="rgba(201,169,122,0.28)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M185,8 C188,0 194,-2 196,5 C198,12 193,16 187,14" stroke="rgba(200,205,214,0.28)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <!-- Bottom of heart tendrils -->
+      <path d="M170,85 C164,90 160,98 164,104 C168,110 175,108 175,100" stroke="rgba(201,169,122,0.25)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M170,85 C176,90 180,98 176,104 C172,110 165,108 165,100" stroke="rgba(200,205,214,0.25)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Thorns on heart -->
+      <path d="M147,13 C142,7 139,9 143,14" stroke="rgba(201,169,122,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M159,8 C155,2 152,4 155,9" stroke="rgba(201,169,122,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M193,13 C198,7 201,9 197,14" stroke="rgba(200,205,214,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M181,8 C185,2 188,4 185,9" stroke="rgba(200,205,214,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M164,50 C159,55 158,60 163,60 C168,60 169,55 166,52" stroke="rgba(201,169,122,0.3)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+      <path d="M176,50 C181,55 182,60 177,60 C172,60 171,55 174,52" stroke="rgba(200,205,214,0.3)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Petals near heart -->
+      <path d="M133,30 C127,30 124,24 128,21 C132,18 136,22 133,30Z" fill="rgba(201,169,122,0.22)" transform="rotate(12 129 26)"/>
+      <path d="M207,30 C213,30 216,24 212,21 C208,18 204,22 207,30Z" fill="rgba(200,205,214,0.22)" transform="rotate(-12 211 26)"/>
+      <path d="M158,2 C156,-6 162,-9 164,-3 C166,3 162,7 158,2Z" fill="rgba(201,169,122,0.2)" transform="rotate(8 161 -2)"/>
+      <path d="M182,2 C184,-6 178,-9 176,-3 C174,3 178,7 182,2Z" fill="rgba(200,205,214,0.2)" transform="rotate(-8 179 -2)"/>
+      <path d="M163,105 C160,113 154,114 153,108 C152,102 157,99 163,105Z" fill="rgba(201,169,122,0.18)" transform="rotate(15 157 104)"/>
+      <path d="M177,105 C180,113 186,114 187,108 C188,102 183,99 177,105Z" fill="rgba(200,205,214,0.18)" transform="rotate(-15 183 104)"/>
+ 
+      <!-- Center meeting point — glowing junction -->
+      <circle cx="170" cy="38" r="5" fill="rgba(201,169,122,0.15)" filter="url(#hg)"/>
+      <circle cx="170" cy="38" r="3" fill="rgba(200,205,214,0.2)"/>
+      <circle cx="170" cy="38" r="1.5" fill="rgba(255,245,247,0.6)"/>
+ 
+      <!-- ============================================================
+           RIGHT SECTION: organic double helix x=200 to x=342
+           Mirror character of left but not perfectly symmetric — 
+           the vines have their own personality on each side
+      ============================================================ -->
+ 
+      <!-- GOLD right — tapers near heart -->
+      <!-- Gold right taper from heart outward -->
+      <path d="M200,38 C204,38 208,20 214,17 C220,14 226,24 230,36"
+            stroke="rgba(201,169,122,0.45)" stroke-width="1.3" fill="none"
+            stroke-linecap="round" filter="url(#gg)"/>
+      <path d="M230,36
+               C234,48 238,60 246,62
+               C254,64 260,54 264,40
+               C268,26 272,12 280,10
+               C288,8 292,22 296,36
+               C300,50 304,62 312,64
+               C318,65 324,54 328,42
+               C332,34 338,36 342,36"
+            stroke="rgba(201,169,122,0.92)" stroke-width="2.3" fill="none"
+            stroke-linecap="round" filter="url(#gg)"/>
+ 
+      <!-- SILVER right — tapers near heart -->
+      <!-- Silver right taper from heart outward -->
+      <path d="M200,38 C204,38 208,56 214,59 C220,62 226,52 230,40"
+            stroke="rgba(200,205,214,0.45)" stroke-width="1.3" fill="none"
+            stroke-linecap="round" filter="url(#ss)"/>
+      <path d="M230,40
+               C234,28 238,16 246,14
+               C254,12 260,22 264,36
+               C268,50 272,64 280,66
+               C288,68 292,54 296,40
+               C300,26 304,14 312,12
+               C318,11 324,22 328,34
+               C332,42 338,38 342,38"
+            stroke="rgba(200,205,214,0.92)" stroke-width="2.3" fill="none"
+            stroke-linecap="round" filter="url(#ss)"/>
+ 
+      <!-- Crossing connectors right -->
+      <path d="M224,38 C225,35 226,32 227,38 C228,44 227,47 226,44 C225,41 225,38 224,38" stroke="rgba(201,169,122,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M256,38 C257,35 258,32 259,38 C260,44 259,47 258,44 C257,41 257,38 256,38" stroke="rgba(200,205,214,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M280,38 C281,35 282,32 283,38 C284,44 283,47 282,44 C281,41 281,38 280,38" stroke="rgba(201,169,122,0.25)" stroke-width="0.7" fill="none"/>
+      <path d="M310,38 C311,35 312,32 313,38 C314,44 313,47 312,44 C311,41 311,38 310,38" stroke="rgba(200,205,214,0.25)" stroke-width="0.7" fill="none"/>
+ 
+      <!-- Wild tendrils GOLD right -->
+      <path d="M211,21 C214,12 220,10 222,16 C224,22 219,26 214,24 C210,22 210,16 213,21" stroke="rgba(201,169,122,0.36)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <path d="M268,15 C271,5 279,2 281,9 C283,16 277,22 270,20 C264,18 264,10 269,8 C274,5 280,9 277,16" stroke="rgba(201,169,122,0.3)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <path d="M322,15 C325,6 331,4 333,10 C335,16 330,20 325,18" stroke="rgba(201,169,122,0.34)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <path d="M233,54 C230,62 225,66 221,62 C217,58 220,52 225,54" stroke="rgba(201,169,122,0.24)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Wild tendrils SILVER right -->
+      <path d="M211,55 C214,64 220,66 222,60 C224,54 219,50 214,52 C210,54 210,60 213,55" stroke="rgba(200,205,214,0.36)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <path d="M268,61 C271,71 279,74 281,67 C283,60 277,54 270,56 C264,58 264,66 269,68 C274,71 280,67 277,60" stroke="rgba(200,205,214,0.3)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+      <path d="M247,17 C250,9 256,6 258,12 C260,18 256,22 252,20" stroke="rgba(200,205,214,0.27)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Thorns GOLD right -->
+      <path d="M206,24 C202,18 200,20 203,25" stroke="rgba(201,169,122,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M216,20 C220,14 222,16 219,21" stroke="rgba(201,169,122,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M242,59 C238,65 236,63 239,58" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M263,17 C259,11 257,13 260,18" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M274,14 C278,8 280,10 277,15" stroke="rgba(201,169,122,0.5)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M296,61 C292,67 290,65 293,60" stroke="rgba(201,169,122,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M317,17 C313,11 311,13 314,18" stroke="rgba(201,169,122,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M328,14 C332,8 334,10 331,15" stroke="rgba(201,169,122,0.5)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Thorns SILVER right -->
+      <path d="M206,52 C202,58 200,56 203,51" stroke="rgba(200,205,214,0.65)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M216,52 C220,58 222,56 219,51" stroke="rgba(200,205,214,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M242,17 C238,11 236,13 239,18" stroke="rgba(200,205,214,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M277,58 C281,64 283,62 280,57" stroke="rgba(200,205,214,0.55)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M317,59 C321,65 323,63 320,58" stroke="rgba(200,205,214,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M328,58 C332,64 334,62 331,57" stroke="rgba(200,205,214,0.5)" stroke-width="1" fill="none" stroke-linecap="round"/>
+ 
+      <!-- Loop curls GOLD right -->
+      <path d="M211,21 C209,15 203,14 203,21 C203,27 209,28 211,21" stroke="rgba(201,169,122,0.33)" stroke-width="0.8" fill="none"/>
+      <path d="M268,15 C266,9 260,8 260,15 C260,21 266,22 268,15" stroke="rgba(201,169,122,0.28)" stroke-width="0.8" fill="none"/>
+ 
+      <!-- Loop curls SILVER right -->
+      <path d="M211,55 C213,61 219,62 219,55 C219,49 213,48 211,55" stroke="rgba(200,205,214,0.33)" stroke-width="0.8" fill="none"/>
+      <path d="M268,61 C270,67 276,68 276,61 C276,55 270,54 268,61" stroke="rgba(200,205,214,0.28)" stroke-width="0.8" fill="none"/>
+ 
+      <!-- Petals RIGHT -->
+      <path d="M336,26 C336,16 343,12 345,20 C347,28 341,32 336,26Z" fill="rgba(201,169,122,0.22)" transform="rotate(28 340 22)"/>
+      <path d="M336,50 C336,60 343,64 345,56 C347,48 341,44 336,50Z" fill="rgba(200,205,214,0.2)" transform="rotate(-22 340 54)"/>
+      <path d="M262,11 C262,1 269,-3 271,5 C273,13 267,17 262,11Z" fill="rgba(201,169,122,0.2)" transform="rotate(-28 266 7)"/>
+      <path d="M233,60 C233,70 226,74 224,66 C222,58 228,54 233,60Z" fill="rgba(200,205,214,0.18)" transform="rotate(15 228 64)"/>
+      <path d="M301,14 C301,4 294,0 292,8 C290,16 296,20 301,14Z" fill="rgba(200,205,214,0.17)" transform="rotate(35 296 10)"/>
+      <path d="M287,56 C287,66 294,70 296,62 C298,54 292,50 287,56Z" fill="rgba(201,169,122,0.17)" transform="rotate(-35 292 60)"/>
+ 
+    </svg>
+    <h2>Who's Playing?</h2>
+    <div class="onboarding-field">
+      <label for="p1Input">Him 😎</label>
+      <input id="p1Input" type="text" placeholder="His name" maxlength="20" autocomplete="off">
+    </div>
+    <div class="onboarding-field">
+      <label for="p2Input">Her 💕</label>
+      <input id="p2Input" type="text" placeholder="Her name" maxlength="20" autocomplete="off">
+    </div>
+    <button onclick="submitOnboarding()">Let's Play 🎮</button>
+  </div>
+</div>
+
 <div class="topbar">
   <span class="menu-btn" onclick="toggleMenu()">☰</span>
 </div>
@@ -8,6 +312,7 @@
   <a onclick="showPage('roleplay')">Roleplay</a>
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
+  <a onclick="updateNames()">Update Names ✏️</a>
 </div>
 
 <div id="home" class="section active">
@@ -27,8 +332,8 @@
 <br>
   
   <h3 style="text-align:center;">
-  John 😎: <span id="johnScoreDisplay">0</span> 🔥 |
-  Felicity 💕: <span id="felicityScoreDisplay">0</span> 🔥
+  <span id="player1Label">Him</span> 😎: <span id="johnScoreDisplay">0</span> 🔥 |
+  <span id="player2Label">Her</span> 💕: <span id="felicityScoreDisplay">0</span> 🔥
 </h3>
   
   <button onclick="resetGame()">New Game 🔄</button>

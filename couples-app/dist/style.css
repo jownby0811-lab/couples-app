@@ -447,3 +447,70 @@ hr {
     transform: translateY(0);
   }
 }
+
+/* ========================= */
+/* ONBOARDING OVERLAY        */
+/* ========================= */
+
+#onboarding {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 3, 6, 0.93);
+  backdrop-filter: blur(6px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#onboarding.hidden {
+  display: none;
+}
+
+.onboarding-card {
+  background: linear-gradient(145deg, #170e14, #1e1520, #130c12);
+  border: 1px solid rgba(201, 169, 122, 0.3);
+  border-radius: 24px;
+  padding: 32px 24px 28px;
+  width: 90%;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(201, 169, 122, 0.07);
+}
+
+.onboarding-card h2 {
+  font-family: 'Playfair Display', serif;
+  background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 4px 0 20px;
+  font-size: 1.6rem;
+}
+
+.onboarding-field {
+  margin: 12px 0;
+  text-align: left;
+}
+
+.onboarding-field label {
+  display: block;
+  font-size: 14px;
+  color: #c9a97a;
+  margin-bottom: 6px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.onboarding-field input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.onboarding-card > button {
+  margin-top: 20px;
+  width: 100%;
+  padding: 16px;
+  font-size: 17px;
+}

@@ -9,6 +9,8 @@ window.showPage = function (pageId) {
 
 let johnScore = parseInt(localStorage.getItem("johnScore")) || 0;
 let felicityScore = parseInt(localStorage.getItem("felicityScore")) || 0;
+let player1Name = localStorage.getItem("player1Name") || "Him";
+let player2Name = localStorage.getItem("player2Name") || "Her";
 let currentPlayer = "john";
 let currentTier = "";
 
@@ -902,12 +904,19 @@ function updateScoreDisplay() {
   document.getElementById("felicityScoreDisplay").innerText = felicityScore;
 }
 
+function updateNameDisplays() {
+  let p1 = document.getElementById("player1Label");
+  let p2 = document.getElementById("player2Label");
+  if (p1) p1.innerText = player1Name;
+  if (p2) p2.innerText = player2Name;
+}
+
 function updateTurnDisplay() {
   let text;
   if (currentPlayer === "john") {
-    text = "John's turn 😎";
+    text = player1Name + "'s turn 😎";
   } else {
-    text = "Felicity's turn 💕";
+    text = player2Name + "'s turn 💕";
   }
   document.getElementById("turnDisplay").innerText = text;
 }
@@ -930,11 +939,11 @@ function passTruth() {
   if (currentPlayer === "john") {
     johnScore += points;
     localStorage.setItem("johnScore", johnScore);
-    showStatus("John +" + points + " 🔥");
+    showStatus(player1Name + " +" + points + " 🔥");
   } else {
     felicityScore += points;
     localStorage.setItem("felicityScore", felicityScore);
-    showStatus("Felicity +" + points + " 🔥");
+    showStatus(player2Name + " +" + points + " 🔥");
   }
   updateScoreDisplay();
   endTurn();
@@ -949,11 +958,11 @@ function awardPoints(points) {
   if (currentPlayer === "john") {
     johnScore += points;
     localStorage.setItem("johnScore", johnScore);
-    showStatus("John +" + points + " 🔥");
+    showStatus(player1Name + " +" + points + " 🔥");
   } else {
     felicityScore += points;
     localStorage.setItem("felicityScore", felicityScore);
-    showStatus("Felicity +" + points + " 🔥");
+    showStatus(player2Name + " +" + points + " 🔥");
   }
   updateScoreDisplay();
   endTurn();
@@ -981,8 +990,37 @@ function resetGame() {
   showStatus("New game started 🔄");
 }
 
+window.showOnboarding = function () {
+  document.getElementById("onboarding").classList.remove("hidden");
+};
+
+window.submitOnboarding = function () {
+  let p1 = document.getElementById("p1Input").value.trim();
+  let p2 = document.getElementById("p2Input").value.trim();
+  if (!p1) { document.getElementById("p1Input").focus(); return; }
+  if (!p2) { document.getElementById("p2Input").focus(); return; }
+  player1Name = p1;
+  player2Name = p2;
+  localStorage.setItem("player1Name", player1Name);
+  localStorage.setItem("player2Name", player2Name);
+  document.getElementById("onboarding").classList.add("hidden");
+  updateNameDisplays();
+  updateTurnDisplay();
+};
+
+window.updateNames = function () {
+  document.getElementById("p1Input").value = localStorage.getItem("player1Name") || "";
+  document.getElementById("p2Input").value = localStorage.getItem("player2Name") || "";
+  document.getElementById("menu").style.left = "-260px";
+  document.getElementById("onboarding").classList.remove("hidden");
+};
+
 window.addEventListener("load", function () {
   updateScoreDisplay();
+  updateNameDisplays();
+  if (localStorage.getItem("player1Name") && localStorage.getItem("player2Name")) {
+    document.getElementById("onboarding").classList.add("hidden");
+  }
   updateTurnDisplay();
   let card = document.getElementById("todCard");
   if (card) {
@@ -990,4 +1028,10 @@ window.addEventListener("load", function () {
       this.classList.toggle("flipped");
     });
   }
+  document.getElementById("p1Input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") document.getElementById("p2Input").focus();
+  });
+  document.getElementById("p2Input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") window.submitOnboarding();
+  });
 });
