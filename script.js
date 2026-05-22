@@ -870,7 +870,7 @@ function getTruth() {
   currentTier = tier;
   document.getElementById("passFailSection").style.display = "block";
   document.getElementById("pointSection").style.display = "none";
-  showSkipSection();
+  showSkipSection("truth");
 }
 
 function getDare() {
@@ -893,7 +893,7 @@ function getDare() {
   currentTier = tier;
   document.getElementById("passFailSection").style.display = "none";
   showPointButtons(tier);
-  showSkipSection();
+  showSkipSection("dare");
 }
 
 function spin() {
@@ -1004,14 +1004,18 @@ function updateDrinkModeUI() {
   if (drinkBtn) drinkBtn.style.display = drinkMode ? "inline-block" : "none";
 }
 
-function showSkipSection() {
+function showSkipSection(cardType) {
   const penalty = truthPoints[currentTier] || 0;
   const skipBtn = document.getElementById("skipBtn");
   const drinkBtn = document.getElementById("drinkBtn");
   const skipSection = document.getElementById("skipSection");
   if (skipBtn) skipBtn.innerText = "Skip 💸 (-" + penalty + " pts)";
   if (drinkBtn) drinkBtn.style.display = drinkMode ? "inline-block" : "none";
-  if (skipSection) skipSection.style.display = "block";
+  if (skipSection) {
+    // Dare cards have no Pass/Fail buffer — add equivalent top margin manually
+    skipSection.style.marginTop = cardType === "dare" ? "110px" : "14px";
+    skipSection.style.display = "block";
+  }
 }
 
 window.toggleDrinkMode = function () {
