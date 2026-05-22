@@ -158,6 +158,8 @@ hr {
   max-width: 360px;
   height: 220px;
   margin: 24px auto;
+  position: relative;
+  z-index: 1;
 }
 
 .hidden-card {
@@ -807,7 +809,8 @@ hr {
   text-align: center;
 }
 
-/* Skip section sits above the 3D card stacking context */
+/* These sections must paint above the 3D card stacking context (z-index: 1) */
+#pointSection,
 #passFailSection,
 #skipSection {
   position: relative;
