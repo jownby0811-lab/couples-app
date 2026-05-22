@@ -11,6 +11,7 @@ let johnScore = parseInt(localStorage.getItem("johnScore")) || 0;
 let felicityScore = parseInt(localStorage.getItem("felicityScore")) || 0;
 let player1Name = localStorage.getItem("player1Name") || "Him";
 let player2Name = localStorage.getItem("player2Name") || "Her";
+let drinkMode = localStorage.getItem("drinkMode") === "true";
 let currentPlayer = "john";
 let currentTier = "";
 
@@ -869,6 +870,7 @@ function getTruth() {
   currentTier = tier;
   document.getElementById("passFailSection").style.display = "block";
   document.getElementById("pointSection").style.display = "none";
+  showSkipSection();
 }
 
 function getDare() {
@@ -891,6 +893,7 @@ function getDare() {
   currentTier = tier;
   document.getElementById("passFailSection").style.display = "none";
   showPointButtons(tier);
+  showSkipSection();
 }
 
 function spin() {
@@ -971,6 +974,7 @@ function awardPoints(points) {
 function endTurn() {
   document.getElementById("passFailSection").style.display = "none";
   document.getElementById("pointSection").style.display = "none";
+  document.getElementById("skipSection").style.display = "none";
   currentPlayer = currentPlayer === "john" ? "felicity" : "john";
   updateTurnDisplay();
 }
@@ -986,9 +990,62 @@ function resetGame() {
   updateTurnDisplay();
   document.getElementById("pointSection").style.display = "none";
   document.getElementById("passFailSection").style.display = "none";
+  document.getElementById("skipSection").style.display = "none";
   document.getElementById("todCard").classList.add("hidden-card");
   showStatus("New game started 🔄");
 }
+
+function updateDrinkModeUI() {
+  const btn = document.getElementById("drinkModeBtn");
+  const indicator = document.getElementById("drinkModeIndicator");
+  const drinkBtn = document.getElementById("drinkBtn");
+  if (btn) btn.classList.toggle("active-drink-mode", drinkMode);
+  if (indicator) indicator.style.display = drinkMode ? "block" : "none";
+  if (drinkBtn) drinkBtn.style.display = drinkMode ? "inline-block" : "none";
+}
+
+function showSkipSection() {
+  const penalty = truthPoints[currentTier] || 0;
+  const skipBtn = document.getElementById("skipBtn");
+  const drinkBtn = document.getElementById("drinkBtn");
+  const skipSection = document.getElementById("skipSection");
+  if (skipBtn) skipBtn.innerText = "Skip 💸 (-" + penalty + " pts)";
+  if (drinkBtn) drinkBtn.style.display = drinkMode ? "inline-block" : "none";
+  if (skipSection) skipSection.style.display = "block";
+}
+
+window.toggleDrinkMode = function () {
+  drinkMode = !drinkMode;
+  localStorage.setItem("drinkMode", drinkMode);
+  updateDrinkModeUI();
+};
+
+window.skipCard = function () {
+  const penalty = truthPoints[currentTier] || 0;
+  if (currentPlayer === "john") {
+    johnScore = Math.max(0, johnScore - penalty);
+    localStorage.setItem("johnScore", johnScore);
+    showStatus(player1Name + " -" + penalty + " 💸");
+  } else {
+    felicityScore = Math.max(0, felicityScore - penalty);
+    localStorage.setItem("felicityScore", felicityScore);
+    showStatus(player2Name + " -" + penalty + " 💸");
+  }
+  updateScoreDisplay();
+  endTurn();
+};
+
+window.drinkSkip = function () {
+  const drinkCounts = { tease: 1, foreplay: 2, dirty: 3 };
+  const count = drinkCounts[currentTier] || 1;
+  const toast = document.getElementById("drinkToast");
+  if (toast) {
+    toast.innerText = "🍺 Take " + count + " drink" + (count > 1 ? "s" : "") + "!";
+    toast.classList.add("show");
+    setTimeout(() => { toast.classList.remove("show"); }, 2000);
+  }
+  endTurn();
+};
 
 window.showOnboarding = function () {
   document.getElementById("onboarding").classList.remove("hidden");
@@ -1018,6 +1075,7 @@ window.updateNames = function () {
 window.addEventListener("load", function () {
   updateScoreDisplay();
   updateNameDisplays();
+  updateDrinkModeUI();
   if (localStorage.getItem("player1Name") && localStorage.getItem("player2Name")) {
     document.getElementById("onboarding").classList.add("hidden");
   }

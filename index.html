@@ -349,8 +349,12 @@
 </h3>
   
   <button onclick="resetGame()">New Game 🔄</button>
+  <div style="margin:6px 0 2px;">
+    <button id="drinkModeBtn" onclick="toggleDrinkMode()" class="drink-mode-toggle">Drink Mode 🍺</button>
+  </div>
 
-<p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:10px;"></p>
+<p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:4px;"></p>
+<div id="drinkModeIndicator" class="drink-mode-indicator" style="display:none;">🍺 Drink Mode</div>
 
 <button id="truthBtn" onclick="getTruth()">Truth</button>
 <button id="dareBtn" onclick="getDare()">Dare</button>
@@ -386,6 +390,12 @@
   <button onclick="passTruth()">Pass ✅</button>
   <button onclick="failTruth()">Fail ❌</button>
 </div>
+
+<div id="skipSection" style="display:none; text-align:center; margin-top:10px;">
+  <button id="skipBtn" onclick="skipCard()" class="skip-btn">Skip 💸</button>
+  <button id="drinkBtn" onclick="drinkSkip()" class="drink-btn" style="display:none;">Drink 🍺</button>
+</div>
+<div id="drinkToast" class="drink-toast"></div>
     </div>
   </div>
 
