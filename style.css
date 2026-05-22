@@ -807,6 +807,17 @@ hr {
   text-align: center;
 }
 
+/* Skip section sits above the 3D card stacking context */
+#passFailSection,
+#skipSection {
+  position: relative;
+  z-index: 2;
+}
+
+#skipSection {
+  margin-top: 14px;
+}
+
 .skip-btn {
   background: rgba(255,255,255,0.05);
   color: rgba(255,245,247,0.55);
@@ -816,9 +827,10 @@ hr {
   padding: 12px 20px;
 }
 .skip-btn:hover {
-  background: rgba(255,255,255,0.09);
-  color: rgba(255,245,247,0.75);
-  transform: scale(1.03);
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,245,247,0.8);
+  box-shadow: 0 0 10px rgba(255,255,255,0.06);
+  transform: none;
 }
 
 .drink-btn {
@@ -830,8 +842,9 @@ hr {
   padding: 12px 20px;
 }
 .drink-btn:hover {
-  background: rgba(230,160,40,0.24);
-  transform: scale(1.03);
+  background: rgba(230,160,40,0.26);
+  box-shadow: 0 0 16px rgba(230,160,40,0.3);
+  transform: none;
 }
 
 .drink-toast {
