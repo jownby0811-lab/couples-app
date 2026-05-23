@@ -2581,7 +2581,7 @@ function drawWheelCanvas(rotDeg, landedSeg) {
     ctx.arc(cx, cy, outerR, startAngle, endAngle);
     ctx.closePath();
     ctx.strokeStyle = 'rgba(8,6,16,0.72)';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.stroke();
 
     // Label at segment center (upright text)
@@ -2615,11 +2615,29 @@ function drawWheelCanvas(rotDeg, landedSeg) {
   ctx.lineWidth = 5;
   ctx.stroke();
 
-  // Dark center (sits behind CSS pin overlay, provides border ring)
+  // Dark ring to mask segment edges at center
   ctx.beginPath();
   ctx.arc(cx, cy, 22, 0, 2 * Math.PI);
   ctx.fillStyle = 'rgba(10,8,18,1)';
   ctx.fill();
+
+  // Center pin drawn at exact mathematical center (cx, cy)
+  var pinR = 15;
+  var pinGrad = ctx.createLinearGradient(cx - pinR, cy - pinR, cx + pinR, cy + pinR);
+  pinGrad.addColorStop(0, '#c9a97a');
+  pinGrad.addColorStop(1, '#c8cdd6');
+  ctx.shadowColor = 'rgba(201,169,122,0.7)';
+  ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pinR, 0, 2 * Math.PI);
+  ctx.fillStyle = pinGrad;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pinR, 0, 2 * Math.PI);
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 window.spinWheel = function () {
