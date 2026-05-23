@@ -2565,12 +2565,12 @@ function drawWheelCanvas(rotDeg, landedSeg) {
     ctx.arc(cx, cy, outerR, startAngle, endAngle);
     ctx.closePath();
     if (isLanded) {
-      ctx.shadowColor = i % 2 === 0 ? 'rgba(201,169,122,0.9)' : 'rgba(200,205,214,0.9)';
-      ctx.shadowBlur = 22;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(232,202,160,1)' : 'rgba(228,234,246,1)';
+      ctx.shadowColor = i % 2 === 0 ? 'rgba(201,169,122,1)' : 'rgba(210,215,224,1)';
+      ctx.shadowBlur = 28;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(220,196,155,1)' : 'rgba(228,233,244,1)';
     } else {
       ctx.shadowBlur = 0;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(201,169,122,0.9)' : 'rgba(200,205,214,0.9)';
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(201,169,122,1)' : 'rgba(210,215,224,1)';
     }
     ctx.fill();
     ctx.shadowBlur = 0;
@@ -2594,25 +2594,30 @@ function drawWheelCanvas(rotDeg, landedSeg) {
     ctx.translate(textX, textY);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '17px serif';
+    ctx.font = '22px serif';
     ctx.fillStyle = '#12070d';
-    ctx.fillText(segs[i].emoji, 0, -9);
-    ctx.font = 'bold 8.5px sans-serif';
+    ctx.fillText(segs[i].emoji, 0, -11);
+    ctx.font = 'bold 11px sans-serif';
     ctx.fillStyle = '#12070d';
-    ctx.fillText(segs[i].label, 0, 7);
+    ctx.fillText(segs[i].label, 0, 10);
     ctx.restore();
   }
 
-  // Outer ring
+  // Chrome gradient outer ring
+  var ringGrad = ctx.createLinearGradient(cx - outerR, cy, cx + outerR, cy);
+  ringGrad.addColorStop(0,    '#c9a97a');
+  ringGrad.addColorStop(0.43, '#c9a97a');
+  ringGrad.addColorStop(0.68, '#b8bcc4');
+  ringGrad.addColorStop(1,    '#c8cdd6');
   ctx.beginPath();
-  ctx.arc(cx, cy, outerR, 0, 2 * Math.PI);
-  ctx.strokeStyle = 'rgba(201,169,122,0.45)';
-  ctx.lineWidth = 3;
+  ctx.arc(cx, cy, outerR + 2, 0, 2 * Math.PI);
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = 5;
   ctx.stroke();
 
-  // Dark center (behind CSS pin overlay)
+  // Dark center (sits behind CSS pin overlay, provides border ring)
   ctx.beginPath();
-  ctx.arc(cx, cy, 20, 0, 2 * Math.PI);
+  ctx.arc(cx, cy, 22, 0, 2 * Math.PI);
   ctx.fillStyle = 'rgba(10,8,18,1)';
   ctx.fill();
 }
