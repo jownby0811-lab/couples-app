@@ -484,8 +484,34 @@
 
 <div id="wheel" class="section">
   <h1>Spin the Wheel</h1>
-  <button onclick="spin()">Spin</button>
-  <p id="result" class="result-text"></p>
+
+  <select id="wheelTierSelect" onchange="wheelTierChanged()">
+    <option value="tease">Tease 😏</option>
+    <option value="foreplay">Foreplay 🔥</option>
+    <option value="dirty">Dirty 😈</option>
+  </select>
+
+  <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
+
+  <div class="wheel-wrapper">
+    <div class="wheel-pointer-arrow">▼</div>
+    <canvas id="wheelCanvas" width="300" height="300"></canvas>
+    <div class="wheel-center-pin"></div>
+  </div>
+
+  <button id="wheelSpinBtn" onclick="spinWheel()">SPIN 🎰</button>
+
+  <div id="wheelResultArea" style="display:none;">
+    <div id="wheelCard" class="wheel-card-container">
+      <div class="card-label" id="wheelCardLabel">ACTIVITY</div>
+      <p id="wheelCardText"></p>
+    </div>
+    <div id="wheelTimerArea" class="wheel-timer-area" style="display:none;">
+      <div id="wheelTimerDisplay" class="wheel-timer-display">0:30</div>
+      <button id="wheelStartTimerBtn" onclick="startWheelTimer()">Start Timer ⏱</button>
+    </div>
+    <button id="wheelNextTurnBtn" class="wheel-next-btn" style="display:none;" onclick="wheelNextTurn()">Next Turn ➡️</button>
+  </div>
 </div>
     <script  src="./script.js"></script>
 
