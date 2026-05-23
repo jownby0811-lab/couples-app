@@ -896,11 +896,7 @@ function getDare() {
   showSkipSection("dare");
 }
 
-function spin() {
-  let options = ["Truth", "Dare", "Kiss", "Massage", "Skip"];
-  let result = options[Math.floor(Math.random() * options.length)];
-  document.getElementById("result").innerText = result;
-}
+// spin() replaced by spinWheel() — see SPIN WHEEL section below
 
 function updateScoreDisplay() {
   document.getElementById("johnScoreDisplay").innerText = johnScore;
@@ -1323,3 +1319,308 @@ window.drawRandomPosition = function () {
 };
 
 window.addEventListener("load", function () { initPositionsPage(); });
+
+// ========================= //
+// SPIN WHEEL                //
+// ========================= //
+
+var wheelCurrentPlayer = 'john';
+var wheelRotationDeg = 0;
+var wheelIsSpinning = false;
+var wheelLandedSegment = -1;
+var wheelTimerInterval = null;
+var wheelTimerSeconds = 0;
+var wheelTimerRunning = false;
+
+var wheelSegmentDefs = {
+  tease: [
+    { label: 'Kissing',    emoji: '💋', tag: 'kissing'    },
+    { label: 'Teasing',    emoji: '😏', tag: 'teasing'    },
+    { label: 'Massage',    emoji: '💆', tag: 'massage'    },
+    { label: 'Manual',     emoji: '🤚', tag: 'manual'     },
+    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
+    { label: 'Position',   emoji: '🔀', tag: 'position'   }
+  ],
+  foreplay: [
+    { label: 'Oral',       emoji: '👄', tag: 'oral'       },
+    { label: 'Manual',     emoji: '🤚', tag: 'manual'     },
+    { label: 'Teasing',    emoji: '😏', tag: 'teasing'    },
+    { label: 'Toys',       emoji: '🧸', tag: 'toys'       },
+    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
+    { label: 'Position',   emoji: '🔀', tag: 'position'   }
+  ],
+  dirty: [
+    { label: 'Oral',       emoji: '👄', tag: 'oral'       },
+    { label: 'Bondage',    emoji: '🔗', tag: 'bondage'    },
+    { label: 'Spanking',   emoji: '👋', tag: 'spanking'   },
+    { label: 'Toys',       emoji: '🧸', tag: 'toys'       },
+    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
+    { label: 'Position',   emoji: '🔀', tag: 'position'   }
+  ]
+};
+
+function initWheelPage() {
+  wheelCurrentPlayer = 'john';
+  wheelRotationDeg = 0;
+  updateWheelTurnDisplay();
+  drawWheelCanvas(0, -1);
+}
+
+function updateWheelTurnDisplay() {
+  var el = document.getElementById('wheelTurnDisplay');
+  if (!el) return;
+  if (wheelCurrentPlayer === 'john') {
+    el.innerText = player1Name + "'s turn 😎";
+  } else {
+    el.innerText = player2Name + "'s turn 💕";
+  }
+}
+
+window.wheelTierChanged = function () {
+  drawWheelCanvas(wheelRotationDeg, -1);
+};
+
+function easeOutCubicWheel(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function drawWheelCanvas(rotDeg, landedSeg) {
+  var canvas = document.getElementById('wheelCanvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var cx = W / 2, cy = H / 2;
+  var outerR = cx - 5;
+  var numSeg = 6;
+  var arcAngle = (2 * Math.PI) / numSeg;
+  var rot = rotDeg * Math.PI / 180;
+
+  ctx.clearRect(0, 0, W, H);
+
+  var tierEl = document.getElementById('wheelTierSelect');
+  var tier = tierEl ? tierEl.value : 'tease';
+  var segs = wheelSegmentDefs[tier];
+
+  for (var i = 0; i < numSeg; i++) {
+    var startAngle = rot + i * arcAngle;
+    var endAngle = startAngle + arcAngle;
+    var isLanded = (i === landedSeg);
+
+    // Segment fill
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, outerR, startAngle, endAngle);
+    ctx.closePath();
+    if (isLanded) {
+      ctx.shadowColor = i % 2 === 0 ? 'rgba(201,169,122,0.9)' : 'rgba(200,205,214,0.9)';
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(232,202,160,1)' : 'rgba(228,234,246,1)';
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(201,169,122,0.9)' : 'rgba(200,205,214,0.9)';
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Divider stroke
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, outerR, startAngle, endAngle);
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(8,6,16,0.72)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label at segment center (upright text)
+    var midAngle = rot + (i + 0.5) * arcAngle;
+    var labelR = outerR * 0.60;
+    var textX = cx + Math.cos(midAngle) * labelR;
+    var textY = cy + Math.sin(midAngle) * labelR;
+
+    ctx.save();
+    ctx.translate(textX, textY);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '17px serif';
+    ctx.fillStyle = '#12070d';
+    ctx.fillText(segs[i].emoji, 0, -9);
+    ctx.font = 'bold 8.5px sans-serif';
+    ctx.fillStyle = '#12070d';
+    ctx.fillText(segs[i].label, 0, 7);
+    ctx.restore();
+  }
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, 0, 2 * Math.PI);
+  ctx.strokeStyle = 'rgba(201,169,122,0.45)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Dark center (behind CSS pin overlay)
+  ctx.beginPath();
+  ctx.arc(cx, cy, 20, 0, 2 * Math.PI);
+  ctx.fillStyle = 'rgba(10,8,18,1)';
+  ctx.fill();
+}
+
+window.spinWheel = function () {
+  if (wheelIsSpinning) return;
+
+  var spinBtn = document.getElementById('wheelSpinBtn');
+  if (spinBtn) spinBtn.disabled = true;
+
+  document.getElementById('wheelResultArea').style.display = 'none';
+  document.getElementById('wheelTimerArea').style.display = 'none';
+  document.getElementById('wheelNextTurnBtn').style.display = 'none';
+  if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
+  wheelTimerRunning = false;
+
+  wheelIsSpinning = true;
+  wheelLandedSegment = Math.floor(Math.random() * 6);
+
+  // Pointer at top = 270° screen. Segment i center = (i+0.5)*60° local.
+  // To land: rot + (i+0.5)*60 ≡ 270 (mod 360) → targetNorm = (270 - (i+0.5)*60) mod 360
+  var segAngle = 60;
+  var randOff = (Math.random() - 0.5) * segAngle * 0.44;
+  var targetNorm = ((270 - (wheelLandedSegment + 0.5) * segAngle + randOff) % 360 + 360) % 360;
+  var currentNorm = ((wheelRotationDeg % 360) + 360) % 360;
+  var delta = ((targetNorm - currentNorm) % 360 + 360) % 360;
+  if (delta < 15) delta += 360;
+
+  var extraSpins = (5 + Math.floor(Math.random() * 4)) * 360;
+  var startDeg = wheelRotationDeg;
+  var endDeg = wheelRotationDeg + extraSpins + delta;
+  var duration = 3600 + Math.random() * 600;
+  var startTime = null;
+
+  function animate(ts) {
+    if (!startTime) startTime = ts;
+    var progress = Math.min((ts - startTime) / duration, 1);
+    wheelRotationDeg = startDeg + (endDeg - startDeg) * easeOutCubicWheel(progress);
+    drawWheelCanvas(wheelRotationDeg, -1);
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      wheelRotationDeg = endDeg;
+      onWheelSpinComplete();
+    }
+  }
+  requestAnimationFrame(animate);
+};
+
+function onWheelSpinComplete() {
+  wheelIsSpinning = false;
+  drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+  var spinBtn = document.getElementById('wheelSpinBtn');
+  if (spinBtn) spinBtn.disabled = false;
+  setTimeout(showWheelResult, 700);
+}
+
+function showWheelResult() {
+  var tierEl = document.getElementById('wheelTierSelect');
+  var tier = tierEl ? tierEl.value : 'tease';
+  var seg = wheelSegmentDefs[tier][wheelLandedSegment];
+
+  var cardEl     = document.getElementById('wheelCard');
+  var cardLabel  = document.getElementById('wheelCardLabel');
+  var cardText   = document.getElementById('wheelCardText');
+  var resultArea = document.getElementById('wheelResultArea');
+
+  // Player border color
+  cardEl.classList.remove('player1-card', 'player2-card');
+  cardEl.classList.add(wheelCurrentPlayer === 'john' ? 'player1-card' : 'player2-card');
+
+  if (seg.tag === 'position') {
+    var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
+    var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
+    if (!pool.length) pool = positionsData;
+    var pos = pool[Math.floor(Math.random() * pool.length)];
+    cardLabel.innerText = '🔀 POSITION';
+    cardText.innerHTML =
+      '<strong style="font-size:17px;">' + pos.name + '</strong>' +
+      '<span style="font-size:13px;opacity:0.82;line-height:1.65;display:block;margin-top:7px;">' + pos.description + '</span>' +
+      '<span style="font-size:11px;opacity:0.58;display:block;margin-top:8px;">💡 ' + pos.tips + '</span>';
+  } else {
+    var dares = gameData[tier].dares;
+    var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
+    if (!filtered.length) filtered = dares;
+    var dare = filtered[Math.floor(Math.random() * filtered.length)];
+    cardLabel.innerText = seg.emoji + ' ' + seg.label.toUpperCase();
+    cardText.innerText = dare.text;
+  }
+
+  resultArea.style.display = 'block';
+
+  // Burn reveal
+  cardEl.classList.remove('wheel-burn-reveal');
+  void cardEl.offsetWidth;
+  cardEl.classList.add('wheel-burn-reveal');
+  setTimeout(function () { cardEl.classList.remove('wheel-burn-reveal'); }, 1900);
+
+  setTimeout(showWheelTimer, 1500);
+}
+
+function showWheelTimer() {
+  var opts = [30, 60, 90, 120, 150, 180];
+  wheelTimerSeconds = opts[Math.floor(Math.random() * opts.length)];
+  var disp    = document.getElementById('wheelTimerDisplay');
+  var startBtn = document.getElementById('wheelStartTimerBtn');
+  var nextBtn  = document.getElementById('wheelNextTurnBtn');
+  var area     = document.getElementById('wheelTimerArea');
+  if (disp)     { disp.innerText = formatWheelTime(wheelTimerSeconds); disp.className = 'wheel-timer-display'; }
+  if (startBtn)  startBtn.style.display = 'inline-block';
+  if (nextBtn)   nextBtn.style.display  = 'none';
+  if (area)      area.style.display     = 'block';
+  wheelTimerRunning = false;
+}
+
+function formatWheelTime(s) {
+  return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+}
+
+window.startWheelTimer = function () {
+  if (wheelTimerRunning) return;
+  wheelTimerRunning = true;
+  var startBtn = document.getElementById('wheelStartTimerBtn');
+  var disp     = document.getElementById('wheelTimerDisplay');
+  if (startBtn) startBtn.style.display = 'none';
+  if (disp)     disp.classList.add('wt-pulse');
+
+  wheelTimerInterval = setInterval(function () {
+    wheelTimerSeconds--;
+    var d = document.getElementById('wheelTimerDisplay');
+    if (wheelTimerSeconds <= 0) {
+      clearInterval(wheelTimerInterval);
+      wheelTimerInterval = null;
+      wheelTimerRunning = false;
+
+      var flash = document.createElement('div');
+      flash.className = 'wheel-screen-flash';
+      document.body.appendChild(flash);
+      setTimeout(function () { if (flash.parentNode) flash.parentNode.removeChild(flash); }, 620);
+
+      if (d) { d.innerText = 'Done! 🔥'; d.className = 'wheel-timer-display wt-done'; }
+
+      setTimeout(function () {
+        var nb = document.getElementById('wheelNextTurnBtn');
+        if (nb) nb.style.display = 'inline-block';
+      }, 500);
+    } else {
+      if (d) d.innerText = formatWheelTime(wheelTimerSeconds);
+    }
+  }, 1000);
+};
+
+window.wheelNextTurn = function () {
+  wheelCurrentPlayer = wheelCurrentPlayer === 'john' ? 'felicity' : 'john';
+  updateWheelTurnDisplay();
+  document.getElementById('wheelResultArea').style.display = 'none';
+  document.getElementById('wheelTimerArea').style.display = 'none';
+  document.getElementById('wheelNextTurnBtn').style.display = 'none';
+  if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
+  wheelTimerRunning = false;
+  drawWheelCanvas(wheelRotationDeg, -1);
+};
+
+window.addEventListener('load', function () { initWheelPage(); });
