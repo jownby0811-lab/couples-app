@@ -8,6 +8,13 @@ window.showPage = function (pageId) {
   if (pageId === "account" && typeof renderAccountPage === "function") {
     renderAccountPage();
   }
+  if (pageId === "rateDares" && typeof initRateDaresPage === "function") {
+    initRateDaresPage();
+  }
+  if (pageId === "truth" && typeof refreshDarePreferenceCaches === "function") {
+    updateMatchedOnlyUI();
+    refreshDarePreferenceCaches();
+  }
   if (typeof setGameSyncPage === "function") setGameSyncPage(pageId);
 };
 
@@ -1081,7 +1088,7 @@ window.drinkSkip = function () {
 // the game_events log, so a draw/skip/verdict looks identical no
 // matter which side triggered it.
 
-function renderSyncedCard(mode, tier, card, drawnByPartner) {
+function renderSyncedCard(mode, tier, card, cardIndex, drawnByPartner) {
   var cardEl = document.getElementById("todCard");
   var text = getCardText(card);
   var genders = getCardGender(card);
@@ -1103,6 +1110,12 @@ function renderSyncedCard(mode, tier, card, drawnByPartner) {
       label.classList.add("hidden");
     }
   }
+
+  // Never attributed to a partner — just a neutral "you both loved this" glow.
+  var isLoveMatch = mode === "dare" && isSyncActive() && dareMutualMatches[dareItemId(tier, cardIndex)] === true;
+  cardEl.classList.toggle("dare-love-match", isLoveMatch);
+  var loveBadge = document.getElementById("loveMatchBadge");
+  if (loveBadge) loveBadge.classList.toggle("hidden", !isLoveMatch);
 }
 
 function showTruthOrDareJudgeUI(mode, myRole) {
@@ -1144,7 +1157,15 @@ function syncDrawCard(mode) {
   var tier = getSelectedTier();
   var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
   var list = getFilteredList(fullList);
-  if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
+  if (mode === "dare") list = applyDarePreferenceFilter(list, tier, fullList);
+  if (list.length === 0) {
+    if (mode === "dare" && dareMatchedOnly) {
+      showStatus("No mutual dare matches yet — rate some together, or turn off Matched Only 💔");
+    } else {
+      showStatus("No cards available for this player 😅");
+    }
+    return;
+  }
   var randomCard = list[Math.floor(Math.random() * list.length)];
   var cardIndex = fullList.indexOf(randomCard);
   var roundId = genRoundId();
@@ -1152,7 +1173,7 @@ function syncDrawCard(mode) {
 
   currentTier = tier;
   syncTruthRound = { roundId: roundId, tier: tier, mode: mode, cardIndex: cardIndex, performerId: performerId, myRole: "performer" };
-  renderSyncedCard(mode, tier, randomCard, false);
+  renderSyncedCard(mode, tier, randomCard, cardIndex, false);
   showTruthOrDareJudgeUI(mode, "performer");
 
   window.GameSync.send("card_drawn", {
@@ -1169,7 +1190,7 @@ function restoreTruthOrDareRound(starterEvent) {
   var myRole = p.performer_user_id === myId ? "performer" : "judge";
   currentTier = p.tier;
   syncTruthRound = { roundId: p.roundId, tier: p.tier, mode: p.mode, cardIndex: p.cardIndex, performerId: p.performer_user_id, myRole: myRole };
-  renderSyncedCard(p.mode, p.tier, card, myRole === "judge");
+  renderSyncedCard(p.mode, p.tier, card, p.cardIndex, myRole === "judge");
   showTruthOrDareJudgeUI(p.mode, myRole);
 }
 
@@ -1271,6 +1292,181 @@ function applyRemoteTruthJudged(ev) {
   showSyncOutcome("todCard", p.verdict === "pass");
   endSyncTruthRound();
 }
+
+// ========================= //
+// DARE PREFERENCES          //
+// ========================= //
+// Reuses the same generic Backend.saveRating/loadRatings/getMutualMatches
+// calls the Positions page already uses, just with item_type 'dare'.
+// A dare's item_id is "<tier>:<index>" — its stable position within
+// gameData[tier].dares, the same addressing the sync feature already
+// uses for card_drawn payloads.
+
+var dareRatings = {};      // item_id -> 'no' | 'maybe' | 'yes' | 'love'
+var dareMutualMatches = {}; // item_id -> love (boolean), present only for mutual matches
+var dareMatchedOnly = localStorage.getItem("dareMatchedOnly") === "true";
+var rateDaresFilter = "all";
+var activeDareRating = null; // { tier, index }
+
+function dareItemId(tier, index) { return tier + ":" + index; }
+
+async function refreshDareRatings() {
+  dareRatings = (window.Backend && await window.Backend.loadRatings("dare")) || {};
+}
+
+async function refreshDareMutualMatches() {
+  if (!isSyncActive()) { dareMutualMatches = {}; return; }
+  var matches = await window.Backend.getMutualMatches("dare");
+  var map = {};
+  matches.forEach(function (m) { map[m.item_id] = !!m.love; });
+  dareMutualMatches = map;
+}
+
+async function refreshDarePreferenceCaches() {
+  await refreshDareRatings();
+  await refreshDareMutualMatches();
+}
+
+// Only ever narrows the deck for couple-linked users — logged-out or
+// unlinked players keep the exact original unfiltered deck.
+function applyDarePreferenceFilter(list, tier, fullList) {
+  if (!isSyncActive()) return list;
+  if (dareMatchedOnly) {
+    return list.filter(function (card) {
+      var idx = fullList.indexOf(card);
+      return Object.prototype.hasOwnProperty.call(dareMutualMatches, dareItemId(tier, idx));
+    });
+  }
+  return list.filter(function (card) {
+    var idx = fullList.indexOf(card);
+    return dareRatings[dareItemId(tier, idx)] !== "no";
+  });
+}
+
+window.toggleMatchedOnly = function () {
+  dareMatchedOnly = !dareMatchedOnly;
+  localStorage.setItem("dareMatchedOnly", dareMatchedOnly);
+  updateMatchedOnlyUI();
+};
+
+function updateMatchedOnlyUI() {
+  var btn = document.getElementById("matchedOnlyBtn");
+  if (!btn) return;
+  var linked = isSyncActive();
+  btn.classList.toggle("hidden", !linked);
+  btn.classList.toggle("active-drink-mode", dareMatchedOnly);
+}
+
+// ---- Rate Dares page ----
+
+async function initRateDaresPage() {
+  await refreshDarePreferenceCaches();
+  renderRateDaresList();
+}
+
+function getRateDaresTier() {
+  var el = document.getElementById("rateDaresTierSelect");
+  return el ? el.value : "tease";
+}
+
+function dareRatingEmoji(r) {
+  return { no: "🚫", maybe: "🤔", yes: "👍", love: "💕" }[r] || "";
+}
+
+function renderRateDaresList() {
+  var tier = getRateDaresTier();
+  var dares = gameData[tier].dares;
+  var list = document.getElementById("rateDaresList");
+  if (!list) return;
+
+  var counts = { all: dares.length, unrated: 0, love: 0, no: 0 };
+  dares.forEach(function (d, i) {
+    var r = dareRatings[dareItemId(tier, i)];
+    if (!r) counts.unrated++;
+    else if (r === "love") counts.love++;
+    else if (r === "no") counts.no++;
+  });
+  document.getElementById("rateDaresCountAll").innerText = counts.all;
+  document.getElementById("rateDaresCountUnrated").innerText = counts.unrated;
+  document.getElementById("rateDaresCountLove").innerText = counts.love;
+  document.getElementById("rateDaresCountNo").innerText = counts.no;
+
+  document.querySelectorAll("#rateDares .pos-browse-row").forEach(function (row) {
+    row.classList.toggle("active", row.getAttribute("data-rate-filter") === rateDaresFilter);
+  });
+
+  list.innerHTML = "";
+  var shown = 0;
+  dares.forEach(function (dare, i) {
+    var id = dareItemId(tier, i);
+    var rating = dareRatings[id];
+    if (rateDaresFilter === "unrated" && rating) return;
+    if (rateDaresFilter === "love" && rating !== "love") return;
+    if (rateDaresFilter === "no" && rating !== "no") return;
+    shown++;
+
+    var item = document.createElement("div");
+    item.className = "pos-list-item";
+    var ratingTag = rating ? "<span class=\"pos-tag\">" + dareRatingEmoji(rating) + "</span>" : "";
+    var tagsHtml = (dare.tags || []).slice(0, 3).map(function (t) {
+      return "<span class=\"pos-vibe-badge pos-vibe-playful\">" + t.replace(/-/g, " ") + "</span>";
+    }).join("");
+    item.innerHTML =
+      "<div class=\"pos-list-name\">" + dare.text + "</div>" +
+      "<div class=\"pos-list-meta\">" + tagsHtml + ratingTag + "</div>";
+    item.onclick = (function (tierArg, index, dareArg) {
+      return function () { openRateDareModal(tierArg, index, dareArg); };
+    })(tier, i, dare);
+    list.appendChild(item);
+  });
+  if (shown === 0) {
+    list.innerHTML = "<p style=\"color:rgba(255,245,247,0.4);text-align:center;padding:20px 0;\">No dares match this filter.</p>";
+  }
+}
+window.renderRateDaresList = renderRateDaresList;
+
+function openRateDareModal(tier, index, dare) {
+  activeDareRating = { tier: tier, index: index };
+  document.getElementById("rateDareModalText").innerText = dare.text;
+  var tagsEl = document.getElementById("rateDareModalTags");
+  tagsEl.innerHTML = (dare.tags || []).map(function (t) {
+    return "<span class=\"pos-category-badge\">" + t.replace(/-/g, " ") + "</span>";
+  }).join("");
+  updateRateDareButtons();
+  document.getElementById("rateDareModal").classList.remove("hidden");
+}
+
+window.closeRateDareModal = function () {
+  document.getElementById("rateDareModal").classList.add("hidden");
+  activeDareRating = null;
+  renderRateDaresList();
+};
+
+function updateRateDareButtons() {
+  if (!activeDareRating) return;
+  var id = dareItemId(activeDareRating.tier, activeDareRating.index);
+  var rating = dareRatings[id];
+  document.querySelectorAll("#rateDareRatingButtons button").forEach(function (b) {
+    b.classList.toggle("active-toggle", b.getAttribute("data-rating") === rating);
+  });
+}
+
+window.setDareRating = function (rating) {
+  if (!activeDareRating) return;
+  var id = dareItemId(activeDareRating.tier, activeDareRating.index);
+  dareRatings[id] = rating;
+  updateRateDareButtons();
+  if (window.Backend) {
+    window.Backend.saveRating("dare", id, rating).then(function () {
+      refreshDareMutualMatches();
+    });
+  }
+};
+
+window.setRateDaresFilter = function (filter) {
+  rateDaresFilter = filter;
+  renderRateDaresList();
+};
 
 window.showOnboarding = function () {
   document.getElementById("onboarding").classList.remove("hidden");
@@ -1742,6 +1938,8 @@ function handleGameBackendChange() {
     gameSyncMyName = "You";
   }
   reconcileGameSyncSubscription();
+  if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
+  if (typeof refreshDarePreferenceCaches === "function") refreshDarePreferenceCaches();
 }
 
 // ---- incoming event dispatch ----
