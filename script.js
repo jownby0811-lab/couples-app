@@ -1095,6 +1095,116 @@ window.addEventListener("load", function () {
 });
 
 // ========================= //
+// AUTH & COUPLE LINKING     //
+// ========================= //
+
+function capitalizeAuthView(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function showAuthView(view) {
+  ["login", "sent", "couple", "linked"].forEach(function (v) {
+    var el = document.getElementById("authView" + capitalizeAuthView(v));
+    if (el) el.classList.toggle("hidden", v !== view);
+  });
+}
+window.showAuthView = showAuthView;
+
+function refreshAuthModalView() {
+  if (!window.Backend || !window.Backend.isLoggedIn()) {
+    showAuthView("login");
+  } else if (window.Backend.isLinked()) {
+    showAuthView("linked");
+  } else {
+    document.getElementById("inviteCodeDisplay").classList.add("hidden");
+    showAuthView("couple");
+  }
+}
+
+window.openAuthModal = function () {
+  document.getElementById("menu").style.left = "-260px";
+  document.getElementById("authModal").classList.remove("hidden");
+  var authErr = document.getElementById("authError");
+  var coupleErr = document.getElementById("coupleError");
+  if (authErr) authErr.innerText = "";
+  if (coupleErr) coupleErr.innerText = "";
+  refreshAuthModalView();
+};
+
+window.closeAuthModal = function () {
+  document.getElementById("authModal").classList.add("hidden");
+};
+
+window.handleSendMagicLink = async function () {
+  var emailInput = document.getElementById("authEmailInput");
+  var email = emailInput.value.trim();
+  var errEl = document.getElementById("authError");
+  errEl.innerText = "";
+  if (!email) { errEl.innerText = "Enter your email first."; return; }
+  try {
+    await window.Backend.sendMagicLink(email);
+    document.getElementById("authSentEmail").innerText = email;
+    showAuthView("sent");
+  } catch (e) {
+    errEl.innerText = e.message || "Couldn't send the link. Try again.";
+  }
+};
+
+window.handleCreateCouple = async function () {
+  var errEl = document.getElementById("coupleError");
+  errEl.innerText = "";
+  try {
+    var code = await window.Backend.createCouple();
+    document.getElementById("inviteCodeValue").innerText = code;
+    document.getElementById("inviteCodeDisplay").classList.remove("hidden");
+  } catch (e) {
+    errEl.innerText = e.message;
+  }
+};
+
+window.handleJoinCouple = async function () {
+  var input = document.getElementById("joinCodeInput");
+  var code = input.value.trim();
+  var errEl = document.getElementById("coupleError");
+  errEl.innerText = "";
+  if (!code) { errEl.innerText = "Enter your partner's code."; return; }
+  try {
+    await window.Backend.joinCouple(code);
+    showAuthView("linked");
+  } catch (e) {
+    errEl.innerText = e.message;
+  }
+};
+
+window.handleSignOut = async function () {
+  await window.Backend.signOut();
+  showAuthView("login");
+  window.closeAuthModal();
+};
+
+function updateAuthMenuLabel() {
+  var el = document.getElementById("menuAuthLink");
+  if (!el || !window.Backend) return;
+  if (window.Backend.isLinked()) el.innerText = "Account 💞";
+  else if (window.Backend.isLoggedIn()) el.innerText = "Link with Partner 💞";
+  else el.innerText = "Sign In / Link 💞";
+}
+
+var authAutoPromptDone = false;
+function handleBackendChange() {
+  updateAuthMenuLabel();
+  if (typeof syncPositionRatingsFromServer === "function") syncPositionRatingsFromServer();
+  if (!authAutoPromptDone && window.Backend.isLoggedIn()) {
+    authAutoPromptDone = true;
+    if (!window.Backend.isLinked()) window.openAuthModal();
+  }
+}
+
+window.addEventListener("load", function () {
+  if (!window.Backend || !window.Backend.isAvailable()) return;
+  window.Backend.onChange(handleBackendChange);
+  window.Backend.init();
+});
+
+// ========================= //
 // POSITIONS PAGE            //
 // ========================= //
 
@@ -1151,6 +1261,13 @@ function savePositionsState() {
     state[pos.id] = { tried: pos.tried, favorite: pos.favorite, todo: pos.todo };
   });
   localStorage.setItem("positionsState", JSON.stringify(state));
+}
+
+function loadPositionRatingsLocal() {
+  var stored = window.Backend ? window.Backend.getLocalRatings("position") : {};
+  positionsData.forEach(function (pos) {
+    pos.rating = stored[String(pos.id)] || null;
+  });
 }
 
 function posDots(difficulty) {
@@ -1226,6 +1343,7 @@ function renderPositionsPage() {
 
 function initPositionsPage() {
   loadPositionsState();
+  loadPositionRatingsLocal();
 
   var pick = positionsData[Math.floor(Math.random() * positionsData.length)];
   var el;
@@ -1274,6 +1392,7 @@ function openPositionCard(id) {
   document.getElementById("modalDots").innerText     = posDots(pos.difficulty);
   document.getElementById("modalCategory").innerText = pos.category.replace(/-/g, " ");
   updatePosButtons(pos);
+  updatePosRatingButtons(pos);
   document.getElementById("positionModal").classList.remove("hidden");
 }
 
@@ -1288,6 +1407,81 @@ function updatePosButtons(pos) {
   document.getElementById("btnFavorite").classList.toggle("active-toggle", pos.favorite);
   document.getElementById("btnTodo").classList.toggle("active-toggle",     pos.todo);
 }
+
+function updatePosRatingButtons(pos) {
+  var buttons = document.querySelectorAll("#posRatingButtons button");
+  buttons.forEach(function (b) {
+    b.classList.toggle("active-toggle", b.getAttribute("data-rating") === pos.rating);
+  });
+}
+
+window.setPositionRating = function (rating) {
+  if (!activePositionId) return;
+  var pos = null;
+  for (var i = 0; i < positionsData.length; i++) {
+    if (positionsData[i].id === activePositionId) { pos = positionsData[i]; break; }
+  }
+  if (!pos) return;
+  pos.rating = rating;
+  updatePosRatingButtons(pos);
+  if (window.Backend) {
+    window.Backend.saveRating("position", pos.id, rating).then(function () {
+      renderMutualMatches();
+    });
+  }
+};
+
+async function renderMutualMatches() {
+  var section = document.getElementById("mutualMatchesSection");
+  var list = document.getElementById("mutualMatchesList");
+  if (!section || !list) return;
+  if (!window.Backend || !window.Backend.isLoggedIn() || !window.Backend.isLinked()) {
+    section.classList.add("hidden");
+    return;
+  }
+  var matches = await window.Backend.getMutualMatches("position");
+  if (!matches.length) {
+    section.classList.add("hidden");
+    return;
+  }
+  list.innerHTML = "";
+  matches.forEach(function (m) {
+    var pos = null;
+    for (var i = 0; i < positionsData.length; i++) {
+      if (String(positionsData[i].id) === String(m.item_id)) { pos = positionsData[i]; break; }
+    }
+    if (!pos) return;
+    var item = document.createElement("div");
+    item.className = "pos-mutual-item" + (m.love ? " pos-mutual-love" : "");
+    item.innerHTML =
+      "<span class=\"pos-mutual-name\">" + pos.name + "</span>" +
+      (m.love ? "<span class=\"pos-mutual-glow-badge\">💕 Love</span>" : "<span class=\"pos-mutual-tag\">Mutual</span>");
+    item.onclick = (function (id) { return function () { openPositionCard(id); }; })(pos.id);
+    list.appendChild(item);
+  });
+  section.classList.remove("hidden");
+}
+window.renderMutualMatches = renderMutualMatches;
+
+async function syncPositionRatingsFromServer() {
+  if (!window.Backend || !window.Backend.isLoggedIn()) {
+    renderMutualMatches();
+    return;
+  }
+  var ratings = await window.Backend.loadRatings("position");
+  positionsData.forEach(function (pos) {
+    pos.rating = ratings[String(pos.id)] || null;
+  });
+  if (activePositionId) {
+    var pos = null;
+    for (var i = 0; i < positionsData.length; i++) {
+      if (positionsData[i].id === activePositionId) { pos = positionsData[i]; break; }
+    }
+    if (pos) updatePosRatingButtons(pos);
+  }
+  renderMutualMatches();
+}
+window.syncPositionRatingsFromServer = syncPositionRatingsFromServer;
 
 window.openPositionCard = openPositionCard;
 
