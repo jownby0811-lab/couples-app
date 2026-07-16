@@ -325,6 +325,58 @@
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
   <a onclick="updateNames()">Update Names ✏️</a>
+  <a onclick="openAuthModal()" id="menuAuthLink">Sign In / Link 💞</a>
+</div>
+
+<div id="authModal" class="auth-modal hidden">
+  <div class="auth-modal-card">
+    <button class="pos-close-btn" onclick="closeAuthModal()">✕</button>
+
+    <div id="authViewLogin" class="auth-view">
+      <h2 class="auth-title">Link With Your Partner</h2>
+      <p class="auth-sub">Sign in with a magic link to sync your ratings and see mutual matches with your partner.</p>
+      <div class="onboarding-field">
+        <label for="authEmailInput">Email</label>
+        <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <button onclick="handleSendMagicLink()">Send Magic Link ✨</button>
+      <p id="authError" class="auth-error"></p>
+    </div>
+
+    <div id="authViewSent" class="auth-view hidden">
+      <h2 class="auth-title">Check Your Email</h2>
+      <p class="auth-sub">We sent a magic link to <strong id="authSentEmail"></strong>. Open it on this device to sign in.</p>
+      <button onclick="showAuthView('login')" class="auth-secondary-btn">Use a Different Email</button>
+    </div>
+
+    <div id="authViewCouple" class="auth-view hidden">
+      <h2 class="auth-title">Connect With Your Partner</h2>
+      <p class="auth-sub">Create an invite code to share, or enter the one your partner sent you.</p>
+
+      <button onclick="handleCreateCouple()">Create Invite Code</button>
+
+      <div id="inviteCodeDisplay" class="invite-code-display hidden">
+        <div class="invite-code-label">Share this code</div>
+        <div class="invite-code-value" id="inviteCodeValue"></div>
+        <p class="auth-sub small">Waiting for your partner to enter it — this screen will update once they join.</p>
+      </div>
+
+      <div class="auth-divider"><span>or</span></div>
+
+      <div class="onboarding-field">
+        <label for="joinCodeInput">Partner's Code</label>
+        <input id="joinCodeInput" type="text" placeholder="e.g. A1B2C3D4" maxlength="8" autocomplete="off" style="text-transform:uppercase;">
+      </div>
+      <button onclick="handleJoinCouple()">Join With Code</button>
+      <p id="coupleError" class="auth-error"></p>
+    </div>
+
+    <div id="authViewLinked" class="auth-view hidden">
+      <h2 class="auth-title">You're Linked 💞</h2>
+      <p class="auth-sub">Your ratings now sync privately with your partner. Only mutual matches are ever shown — never who rated what.</p>
+      <button onclick="handleSignOut()" class="auth-secondary-btn">Sign Out</button>
+    </div>
+  </div>
 </div>
 
 <div id="home" class="section active">
@@ -429,6 +481,11 @@
     </div>
   </div>
 
+  <div id="mutualMatchesSection" class="pos-mutual-section hidden">
+    <div class="pos-section-title">We Both Want This 💞</div>
+    <div id="mutualMatchesList" class="pos-mutual-list"></div>
+  </div>
+
   <div class="pos-section-title">Browse</div>
   <div class="pos-browse-list">
     <div class="pos-browse-row active" data-browse="all" onclick="setPosFilter('browse','all')">
@@ -478,6 +535,16 @@
         <button id="btnFavorite" onclick="togglePositionState('favorite')">❤️ Fave</button>
         <button id="btnTodo"     onclick="togglePositionState('todo')">📌 To Do</button>
       </div>
+
+      <div class="pos-rating-box">
+        <span class="pos-tips-label">Your Rating</span>
+        <div class="pos-rating-buttons" id="posRatingButtons">
+          <button data-rating="no" onclick="setPositionRating('no')">🚫 No</button>
+          <button data-rating="maybe" onclick="setPositionRating('maybe')">🤔 Maybe</button>
+          <button data-rating="yes" onclick="setPositionRating('yes')">👍 Yes</button>
+          <button data-rating="love" onclick="setPositionRating('love')">💕 Love</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -512,6 +579,8 @@
     <button id="wheelNextTurnBtn" class="wheel-next-btn" style="display:none;" onclick="wheelNextTurn()">Next Turn ➡️</button>
   </div>
 </div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="./backend.js"></script>
     <script  src="./script.js"></script>
 
   </body>
