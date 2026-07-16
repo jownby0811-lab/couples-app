@@ -5,6 +5,9 @@ window.showPage = function (pageId) {
   }
   document.getElementById(pageId).classList.add("active");
   document.getElementById("menu").style.left = "-260px";
+  if (pageId === "account" && typeof renderAccountPage === "function") {
+    renderAccountPage();
+  }
 };
 
 let johnScore = parseInt(localStorage.getItem("johnScore")) || 0;
@@ -1098,104 +1101,284 @@ window.addEventListener("load", function () {
 // AUTH & COUPLE LINKING     //
 // ========================= //
 
-function capitalizeAuthView(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-function showAuthView(view) {
-  ["login", "sent", "couple", "linked"].forEach(function (v) {
-    var el = document.getElementById("authView" + capitalizeAuthView(v));
-    if (el) el.classList.toggle("hidden", v !== view);
-  });
-}
-window.showAuthView = showAuthView;
-
-function refreshAuthModalView() {
-  if (!window.Backend || !window.Backend.isLoggedIn()) {
-    showAuthView("login");
-  } else if (window.Backend.isLinked()) {
-    showAuthView("linked");
-  } else {
-    document.getElementById("inviteCodeDisplay").classList.add("hidden");
-    showAuthView("couple");
-  }
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.textContent = str === null || str === undefined ? "" : String(str);
+  return div.innerHTML;
 }
 
-window.openAuthModal = function () {
-  document.getElementById("menu").style.left = "-260px";
-  document.getElementById("authModal").classList.remove("hidden");
-  var authErr = document.getElementById("authError");
-  var coupleErr = document.getElementById("coupleError");
-  if (authErr) authErr.innerText = "";
-  if (coupleErr) coupleErr.innerText = "";
-  refreshAuthModalView();
+window.setAuthTab = function (tab) {
+  var signinTab = document.getElementById("authTabSignin");
+  var signupTab = document.getElementById("authTabSignup");
+  var signinForm = document.getElementById("signinForm");
+  var signupForm = document.getElementById("signupForm");
+  if (signinTab) signinTab.classList.toggle("active", tab === "signin");
+  if (signupTab) signupTab.classList.toggle("active", tab === "signup");
+  if (signinForm) signinForm.classList.toggle("hidden", tab !== "signin");
+  if (signupForm) signupForm.classList.toggle("hidden", tab !== "signup");
 };
 
-window.closeAuthModal = function () {
-  document.getElementById("authModal").classList.add("hidden");
-};
-
-window.handleSendMagicLink = async function () {
-  var emailInput = document.getElementById("authEmailInput");
-  var email = emailInput.value.trim();
-  var errEl = document.getElementById("authError");
+window.handleSignIn = async function () {
+  var email = document.getElementById("signinEmail").value.trim();
+  var password = document.getElementById("signinPassword").value;
+  var errEl = document.getElementById("signinError");
+  errEl.classList.remove("success");
   errEl.innerText = "";
-  if (!email) { errEl.innerText = "Enter your email first."; return; }
+  if (!email || !password) { errEl.innerText = "Enter your email and password."; return; }
   try {
-    await window.Backend.sendMagicLink(email);
-    document.getElementById("authSentEmail").innerText = email;
-    showAuthView("sent");
-  } catch (e) {
-    errEl.innerText = e.message || "Couldn't send the link. Try again.";
-  }
-};
-
-window.handleCreateCouple = async function () {
-  var errEl = document.getElementById("coupleError");
-  errEl.innerText = "";
-  try {
-    var code = await window.Backend.createCouple();
-    document.getElementById("inviteCodeValue").innerText = code;
-    document.getElementById("inviteCodeDisplay").classList.remove("hidden");
+    await window.Backend.signIn(email, password);
+    renderAccountPage();
   } catch (e) {
     errEl.innerText = e.message;
   }
 };
 
-window.handleJoinCouple = async function () {
-  var input = document.getElementById("joinCodeInput");
-  var code = input.value.trim();
-  var errEl = document.getElementById("coupleError");
+window.handleSignUp = async function () {
+  var name = document.getElementById("signupName").value.trim();
+  var email = document.getElementById("signupEmail").value.trim();
+  var password = document.getElementById("signupPassword").value;
+  var errEl = document.getElementById("signupError");
   errEl.innerText = "";
-  if (!code) { errEl.innerText = "Enter your partner's code."; return; }
+  if (!name) { errEl.innerText = "Tell us what to call you."; return; }
+  if (!email || !password) { errEl.innerText = "Enter your email and password."; return; }
   try {
-    await window.Backend.joinCouple(code);
-    showAuthView("linked");
+    await window.Backend.signUp(email, password, name);
+    renderAccountPage();
+    if (!window.Backend.isInCouple()) {
+      openCoupleChoiceModal();
+    }
   } catch (e) {
     errEl.innerText = e.message;
+  }
+};
+
+window.handleForgotPassword = async function () {
+  var errEl = document.getElementById("signinError");
+  var email = document.getElementById("signinEmail").value.trim();
+  errEl.classList.remove("success");
+  if (!email) {
+    errEl.innerText = 'Enter your email above, then tap "Forgot password?" again.';
+    return;
+  }
+  errEl.innerText = "";
+  try {
+    await window.Backend.resetPassword(email);
+    errEl.classList.add("success");
+    errEl.innerText = "Check your email for a password reset link.";
+  } catch (e) {
+    errEl.innerText = e.message;
+  }
+};
+
+window.handleSetNewPassword = async function () {
+  var password = document.getElementById("recoveryPassword").value;
+  var errEl = document.getElementById("recoveryError");
+  errEl.innerText = "";
+  if (!password || password.length < 6) { errEl.innerText = "Password must be at least 6 characters."; return; }
+  try {
+    await window.Backend.setNewPassword(password);
+    document.getElementById("recoveryPassword").value = "";
+    renderAccountPage();
+  } catch (e) {
+    errEl.innerText = e.message;
+  }
+};
+
+window.handleSaveDisplayName = async function () {
+  var name = document.getElementById("acctDisplayName").value.trim();
+  var msgEl = document.getElementById("acctProfileMsg");
+  msgEl.classList.remove("success");
+  msgEl.innerText = "";
+  if (!name) { msgEl.innerText = "Enter a display name."; return; }
+  try {
+    await window.Backend.updateDisplayName(name);
+    msgEl.classList.add("success");
+    msgEl.innerText = "Saved!";
+  } catch (e) {
+    msgEl.innerText = e.message;
   }
 };
 
 window.handleSignOut = async function () {
   await window.Backend.signOut();
-  showAuthView("login");
-  window.closeAuthModal();
+  renderAccountPage();
 };
 
-function updateAuthMenuLabel() {
-  var el = document.getElementById("menuAuthLink");
-  if (!el || !window.Backend) return;
-  if (window.Backend.isLinked()) el.innerText = "Account 💞";
-  else if (window.Backend.isLoggedIn()) el.innerText = "Link with Partner 💞";
-  else el.innerText = "Sign In / Link 💞";
+window.handleAccountCreateCouple = async function () {
+  var errEl = document.getElementById("acctCoupleError");
+  try {
+    await window.Backend.createCouple();
+    renderAccountCoupleArea();
+  } catch (e) {
+    if (errEl) errEl.innerText = e.message;
+  }
+};
+
+window.handleAccountJoinCouple = async function () {
+  var input = document.getElementById("acctJoinCode");
+  var errEl = document.getElementById("acctCoupleError");
+  var code = input ? input.value.trim() : "";
+  if (errEl) errEl.innerText = "";
+  if (!code) { if (errEl) errEl.innerText = "Enter your partner's code."; return; }
+  try {
+    await window.Backend.joinCouple(code);
+    renderAccountCoupleArea();
+  } catch (e) {
+    if (errEl) errEl.innerText = e.message;
+  }
+};
+
+window.handleLeaveCouple = async function () {
+  if (!window.confirm("Leave this couple? You'll stop seeing mutual matches until you link again.")) return;
+  try {
+    await window.Backend.leaveCouple();
+    renderAccountCoupleArea();
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+// ---- Post-signup two-choice couple prompt ----
+
+function openCoupleChoiceModal() {
+  document.getElementById("coupleChoiceButtons").classList.remove("hidden");
+  document.getElementById("coupleChoiceJoinForm").classList.add("hidden");
+  document.getElementById("coupleChoiceCreateResult").classList.add("hidden");
+  document.getElementById("coupleChoiceSkip").classList.remove("hidden");
+  var errEl = document.getElementById("coupleChoiceError");
+  if (errEl) errEl.innerText = "";
+  var codeInput = document.getElementById("choiceJoinCode");
+  if (codeInput) codeInput.value = "";
+  document.getElementById("coupleChoiceModal").classList.remove("hidden");
 }
 
-var authAutoPromptDone = false;
-function handleBackendChange() {
-  updateAuthMenuLabel();
-  if (typeof syncPositionRatingsFromServer === "function") syncPositionRatingsFromServer();
-  if (!authAutoPromptDone && window.Backend.isLoggedIn()) {
-    authAutoPromptDone = true;
-    if (!window.Backend.isLinked()) window.openAuthModal();
+function closeCoupleChoiceModal() {
+  document.getElementById("coupleChoiceModal").classList.add("hidden");
+}
+
+window.handleChoiceCreate = async function () {
+  var errEl = document.getElementById("coupleChoiceError");
+  if (errEl) errEl.innerText = "";
+  try {
+    var code = await window.Backend.createCouple();
+    document.getElementById("coupleChoiceButtons").classList.add("hidden");
+    document.getElementById("coupleChoiceJoinForm").classList.add("hidden");
+    document.getElementById("choiceInviteCode").innerText = code;
+    document.getElementById("coupleChoiceCreateResult").classList.remove("hidden");
+    document.getElementById("coupleChoiceSkip").classList.add("hidden");
+  } catch (e) {
+    if (errEl) errEl.innerText = e.message;
   }
+};
+
+window.handleChoiceShowJoin = function () {
+  document.getElementById("coupleChoiceButtons").classList.add("hidden");
+  document.getElementById("coupleChoiceJoinForm").classList.remove("hidden");
+};
+
+window.handleChoiceBack = function () {
+  document.getElementById("coupleChoiceJoinForm").classList.add("hidden");
+  document.getElementById("coupleChoiceButtons").classList.remove("hidden");
+  var errEl = document.getElementById("coupleChoiceError");
+  if (errEl) errEl.innerText = "";
+};
+
+window.handleChoiceJoinSubmit = async function () {
+  var input = document.getElementById("choiceJoinCode");
+  var code = input.value.trim();
+  var errEl = document.getElementById("coupleChoiceError");
+  errEl.innerText = "";
+  if (!code) { errEl.innerText = "Enter your partner's code."; return; }
+  try {
+    await window.Backend.joinCouple(code);
+    closeCoupleChoiceModal();
+    renderAccountPage();
+  } catch (e) {
+    errEl.innerText = e.message;
+  }
+};
+
+window.handleChoiceDone = function () {
+  closeCoupleChoiceModal();
+  renderAccountPage();
+};
+
+window.handleChoiceSkip = function () {
+  closeCoupleChoiceModal();
+};
+
+// ---- Account page rendering ----
+
+async function renderAccountProfile() {
+  var input = document.getElementById("acctDisplayName");
+  if (!input || !window.Backend) return;
+  var profile = await window.Backend.getProfile();
+  input.value = (profile && profile.display_name) || "";
+}
+
+function renderAccountCoupleArea() {
+  var area = document.getElementById("acctCoupleArea");
+  if (!area || !window.Backend) return;
+  var couple = window.Backend.getMyCouple();
+  if (!couple) {
+    area.innerHTML =
+      '<p class="auth-sub">Link up with your partner to sync ratings and see mutual matches.</p>' +
+      '<button onclick="handleAccountCreateCouple()">Start a New Couple</button>' +
+      '<div class="auth-divider"><span>or</span></div>' +
+      '<div class="onboarding-field">' +
+        '<label for="acctJoinCode">Partner\'s Code</label>' +
+        '<input id="acctJoinCode" type="text" placeholder="e.g. A1B2C3D4" maxlength="8" autocomplete="off" style="text-transform:uppercase;">' +
+      "</div>" +
+      '<button onclick="handleAccountJoinCouple()">Join With Code</button>' +
+      '<p id="acctCoupleError" class="auth-error"></p>';
+  } else if (!couple.partnerName) {
+    area.innerHTML =
+      '<div class="invite-code-display">' +
+        '<div class="invite-code-label">Share this code</div>' +
+        '<div class="invite-code-value">' + escapeHtml(couple.inviteCode) + "</div>" +
+        '<p class="auth-sub small">Waiting for your partner to join…</p>' +
+      "</div>";
+  } else {
+    area.innerHTML =
+      '<p class="auth-sub">Linked with <strong>' + escapeHtml(couple.partnerName) + '</strong> 💞</p>' +
+      '<button onclick="handleLeaveCouple()" class="auth-secondary-btn">Leave Couple</button>';
+  }
+}
+
+function renderAccountPage() {
+  var recoveryArea = document.getElementById("acctRecoveryArea");
+  var authArea = document.getElementById("acctAuthArea");
+  var profileArea = document.getElementById("acctProfileArea");
+  if (!recoveryArea || !authArea || !profileArea || !window.Backend) return;
+
+  if (window.Backend.isRecoveryMode()) {
+    recoveryArea.classList.remove("hidden");
+    authArea.classList.add("hidden");
+    profileArea.classList.add("hidden");
+    return;
+  }
+  recoveryArea.classList.add("hidden");
+
+  if (window.Backend.isLoggedIn()) {
+    authArea.classList.add("hidden");
+    profileArea.classList.remove("hidden");
+    renderAccountProfile();
+    renderAccountCoupleArea();
+  } else {
+    authArea.classList.remove("hidden");
+    profileArea.classList.add("hidden");
+  }
+}
+window.renderAccountPage = renderAccountPage;
+
+function handleBackendChange() {
+  if (typeof syncPositionRatingsFromServer === "function") syncPositionRatingsFromServer();
+  if (window.Backend.isRecoveryMode()) {
+    window.showPage("account");
+    return;
+  }
+  var acct = document.getElementById("account");
+  if (acct && acct.classList.contains("active")) renderAccountPage();
 }
 
 window.addEventListener("load", function () {
