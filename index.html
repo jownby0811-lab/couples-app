@@ -321,7 +321,7 @@
 <div id="menu" class="menu">
   <a onclick="showPage('home')">Home</a>
   <a onclick="showPage('truth')">Truth or Dare</a>
-  <a onclick="showPage('rateDares')">Rate Dares 💌</a>
+  <a onclick="showPage('personalize')">Personalize 💌</a>
   <a onclick="showPage('roleplay')">Roleplay</a>
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
@@ -389,7 +389,7 @@
     <button id="drinkModeBtn" onclick="toggleDrinkMode()" class="drink-mode-toggle">Drink Mode 🍺</button>
     <button id="matchedOnlyBtn" onclick="toggleMatchedOnly()" class="drink-mode-toggle hidden">Matched Only 💕</button>
   </div>
-  <p class="auth-link" onclick="showPage('rateDares')">Rate Dares 💌</p>
+  <p class="auth-link" onclick="showPage('personalize')">Personalize 💌</p>
 
 <p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:4px;"></p>
 <div id="drinkModeIndicator" class="drink-mode-indicator" style="display:none;">🍺 Drink Mode</div>
@@ -441,52 +441,75 @@
   <p id="judgeWaitText" class="judge-wait-text"></p>
 </div>
 
+<div id="inGameRatingStrip" class="ingame-rating-strip hidden">
+  <div class="ingame-rating-row">
+    <span class="ingame-rating-label">How was this one?</span>
+    <button class="ingame-rating-dismiss" onclick="dismissInGameRating()">✕</button>
+  </div>
+  <div class="pos-rating-buttons" id="inGameRatingButtons">
+    <button data-rating="no" onclick="setInGameRating('no')">🚫 No</button>
+    <button data-rating="maybe" onclick="setInGameRating('maybe')">🤔 Maybe</button>
+    <button data-rating="yes" onclick="setInGameRating('yes')">👍 Yes</button>
+    <button data-rating="love" onclick="setInGameRating('love')">💕 Love</button>
+  </div>
+</div>
+
 <div id="drinkToast" class="drink-toast"></div>
     </div>
   </div>
 
 </div>
 
-<div id="rateDares" class="section">
-  <h1>Rate Dares</h1>
-  <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate dares privately. Dares you mark "No" won't be drawn for you in Truth or Dare — and dares you both like show up as matches.</p>
+<div id="personalize" class="section">
+  <h1>Personalize</h1>
+  <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate truths and dares privately. Anything you mark "No" won't be drawn for you in Truth or Dare — and anything you both like shows up as a match.</p>
 
-  <select id="rateDaresTierSelect" onchange="renderRateDaresList()">
+  <div class="auth-tabs" style="max-width:340px;">
+    <button id="personalizeTabDares" class="auth-tab active" onclick="setPersonalizeTab('dare')">Dares</button>
+    <button id="personalizeTabTruths" class="auth-tab" onclick="setPersonalizeTab('truth')">Truths</button>
+  </div>
+
+  <select id="personalizeTierSelect" onchange="onPersonalizeTierChange()">
     <option value="tease">Tease 😏</option>
     <option value="foreplay">Foreplay 🔥</option>
     <option value="dirty">Dirty 😈</option>
   </select>
 
   <div class="pos-browse-list" style="margin-top:14px;">
-    <div class="pos-browse-row active" data-rate-filter="all" onclick="setRateDaresFilter('all')">
-      <span>All Dares</span><span class="pos-count" id="rateDaresCountAll">0</span>
+    <div class="pos-browse-row active" data-personalize-filter="all" onclick="setPersonalizeFilter('all')">
+      <span>All</span><span class="pos-count" id="personalizeCountAll">0</span>
     </div>
-    <div class="pos-browse-row" data-rate-filter="unrated" onclick="setRateDaresFilter('unrated')">
-      <span>⬜ Unrated</span><span class="pos-count" id="rateDaresCountUnrated">0</span>
+    <div class="pos-browse-row" data-personalize-filter="unrated" onclick="setPersonalizeFilter('unrated')">
+      <span>⬜ Unrated</span><span class="pos-count" id="personalizeCountUnrated">0</span>
     </div>
-    <div class="pos-browse-row" data-rate-filter="love" onclick="setRateDaresFilter('love')">
-      <span>💕 Loved</span><span class="pos-count" id="rateDaresCountLove">0</span>
+    <div class="pos-browse-row" data-personalize-filter="love" onclick="setPersonalizeFilter('love')">
+      <span>💕 Loved</span><span class="pos-count" id="personalizeCountLove">0</span>
     </div>
-    <div class="pos-browse-row" data-rate-filter="no" onclick="setRateDaresFilter('no')">
-      <span>🚫 No</span><span class="pos-count" id="rateDaresCountNo">0</span>
+    <div class="pos-browse-row" data-personalize-filter="no" onclick="setPersonalizeFilter('no')">
+      <span>🚫 No</span><span class="pos-count" id="personalizeCountNo">0</span>
     </div>
   </div>
 
-  <div id="rateDaresList" class="pos-list"></div>
+  <div id="personalizeTagFilters" class="pos-filter-group">
+    <div class="pos-filter-label">Tags <span class="auth-link" style="display:inline-block;margin:0 0 0 8px;font-size:11px;" onclick="clearPersonalizeTagFilters()">Clear all</span></div>
+    <div class="pos-filter-chips" id="personalizeTagChips"></div>
+  </div>
 
-  <div id="rateDareModal" class="pos-modal hidden">
+  <div id="personalizeList" class="pos-list"></div>
+
+  <div id="personalizeModal" class="pos-modal hidden">
     <div class="pos-modal-card">
-      <button class="pos-close-btn" onclick="closeRateDareModal()">✕</button>
-      <div class="pos-modal-name" id="rateDareModalText"></div>
-      <div class="pos-modal-meta" id="rateDareModalTags"></div>
+      <button class="pos-close-btn" onclick="closePersonalizeModal()">✕</button>
+      <div class="pos-modal-name" id="personalizeModalText"></div>
+      <div class="pos-modal-meta" id="personalizeModalTags"></div>
 
       <div class="pos-rating-box">
         <span class="pos-tips-label">Your Rating</span>
-        <div class="pos-rating-buttons" id="rateDareRatingButtons">
-          <button data-rating="no" onclick="setDareRating('no')">🚫 No</button>
-          <button data-rating="maybe" onclick="setDareRating('maybe')">🤔 Maybe</button>
-          <button data-rating="yes" onclick="setDareRating('yes')">👍 Yes</button>
-          <button data-rating="love" onclick="setDareRating('love')">💕 Love</button>
+        <div class="pos-rating-buttons" id="personalizeRatingButtons">
+          <button data-rating="no" onclick="setPersonalizeRating('no')">🚫 No</button>
+          <button data-rating="maybe" onclick="setPersonalizeRating('maybe')">🤔 Maybe</button>
+          <button data-rating="yes" onclick="setPersonalizeRating('yes')">👍 Yes</button>
+          <button data-rating="love" onclick="setPersonalizeRating('love')">💕 Love</button>
         </div>
       </div>
     </div>

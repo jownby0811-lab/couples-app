@@ -272,7 +272,7 @@ hr {
 }
 
 #tierSelect,
-#rateDaresTierSelect {
+#personalizeTierSelect {
   padding: 10px 16px;
   border-radius: 14px;
   background: linear-gradient(#24151d, #24151d) padding-box,
@@ -826,6 +826,7 @@ hr {
 }
 
 .pos-filter-group  { text-align: left; }
+.pos-filter-group.hidden { display: none; }
 .pos-filter-label  {
   font-size: 11px;
   color: rgba(255,245,247,0.4);
@@ -1199,6 +1200,58 @@ hr {
   50%      { opacity: 1; }
 }
 
+/* Private in-game rating strip — compact, dismissible, never seen by
+   the partner (Backend.saveRating only, no game event). */
+.ingame-rating-strip {
+  max-width: 360px;
+  margin: 16px auto 0;
+  background: linear-gradient(145deg, #1a1e24, #242a30);
+  border: 1px solid rgba(201, 169, 122, 0.25);
+  border-radius: 16px;
+  padding: 14px 16px 16px;
+  position: relative;
+  z-index: 2;
+}
+
+.ingame-rating-strip.hidden {
+  display: none;
+}
+
+.ingame-rating-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ingame-rating-label {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px;
+  color: #c9a97a;
+  font-weight: 600;
+}
+
+.ingame-rating-dismiss {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 245, 247, 0.7);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: none;
+  line-height: 24px;
+  text-align: center;
+}
+
+.ingame-rating-dismiss:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: none;
+}
+
 @keyframes syncCelebratePulse {
   0%   { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(201,169,122,0)); }
   35%  { transform: scale(1.04); filter: drop-shadow(0 0 26px rgba(201,169,122,0.85)); }
@@ -1222,8 +1275,8 @@ hr {
   filter: grayscale(0.35);
 }
 
-/* Dare preference matches — never attributed to a partner, just a
-   neutral "you both loved this" glow, matching the Positions page's
+/* Truth/dare preference matches — never attributed to a partner, just
+   a neutral "you both loved this" glow, matching the Positions page's
    mutual-love treatment. */
 .love-match-badge {
   display: inline-block;
@@ -1241,7 +1294,7 @@ hr {
   display: none;
 }
 
-#todCard.dare-love-match .card-front {
+#todCard.love-match .card-front {
   border-color: rgba(255, 79, 135, 0.65);
   animation: loveMatchGlow 2.4s ease-in-out infinite;
 }
