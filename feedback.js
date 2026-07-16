@@ -52,10 +52,34 @@
     return why ? selectedMode + " — " + why : selectedMode;
   }
 
-  function setSubmitting(isSubmitting) {
+  function setButtonState(state) {
     var btn = document.getElementById("fbSubmitBtn");
-    btn.disabled = isSubmitting;
-    btn.innerText = isSubmitting ? "Sending…" : "Send Feedback 💌";
+    if (state === "sending") {
+      btn.disabled = true;
+      btn.innerText = "Sending…";
+    } else if (state === "sent") {
+      btn.disabled = true;
+      btn.innerText = "Sent ✓";
+    } else {
+      btn.disabled = false;
+      btn.innerText = "Send Feedback 💌";
+    }
+  }
+
+  function wait(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        reject(new Error("TIMEOUT"));
+      }, ms);
+      promise.then(
+        function (value) { clearTimeout(timer); resolve(value); },
+        function (err) { clearTimeout(timer); reject(err); }
+      );
+    });
   }
 
   function showThankYou() {
@@ -92,15 +116,28 @@
       missing: blankToNull(document.getElementById("fbMissing").value)
     };
 
-    setSubmitting(true);
+    setButtonState("sending");
     try {
-      var { error } = await client.from("beta_feedback").insert(payload);
+      // No .select() chained: this is a minimal-return insert that never
+      // asks PostgREST to read the row back, which the write-only RLS
+      // policy on beta_feedback (insert-only, no select) would otherwise
+      // leave hanging.
+      var { error } = await withTimeout(
+        client.from("beta_feedback").insert(payload),
+        10000
+      );
       if (error) throw error;
+      setButtonState("sent");
+      await wait(700);
       showThankYou();
     } catch (err) {
       console.warn("Failed to submit beta feedback", err);
-      errEl.innerText = "Couldn't send that just now — your answers are still here, please try again.";
-      setSubmitting(false);
+      if (err && err.message === "TIMEOUT") {
+        errEl.innerText = "That's taking longer than expected — your answers are still here, please try again.";
+      } else {
+        errEl.innerText = "Couldn't send that just now — your answers are still here, please try again.";
+      }
+      setButtonState("idle");
     }
   }
 
