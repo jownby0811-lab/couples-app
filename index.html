@@ -368,6 +368,7 @@
 
 <div id="truth" class="section">
   <h1>Truth or Dare</h1>
+  <p id="truthConnIndicator" class="conn-indicator hidden"></p>
 
 <select id="tierSelect">
   <option value="tease">Tease 😏</option>
@@ -400,6 +401,8 @@
   <div id="pointButtons"></div>
 </div>
 
+<p id="drawnByLabel" class="drawn-by-label hidden"></p>
+
  <!-- FLIP CARD -->
 <div id="todCard" class="game-card hidden-card">
   <div class="card-inner">
@@ -429,6 +432,11 @@
   <button id="skipBtn" onclick="skipCard()" class="skip-btn">Skip 💸</button>
   <button id="drinkBtn" onclick="drinkSkip()" class="drink-btn" style="display:none;">Drink 🍺</button>
 </div>
+
+<div id="judgeWaitSection" style="display:none; text-align:center; margin-top:15px;">
+  <p id="judgeWaitText" class="judge-wait-text"></p>
+</div>
+
 <div id="drinkToast" class="drink-toast"></div>
     </div>
   </div>
@@ -533,6 +541,7 @@
 
 <div id="wheel" class="section">
   <h1>Spin the Wheel</h1>
+  <p id="wheelConnIndicator" class="conn-indicator hidden"></p>
 
   <select id="wheelTierSelect" onchange="wheelTierChanged()">
     <option value="tease">Tease 😏</option>
@@ -541,6 +550,7 @@
   </select>
 
   <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
+  <p id="wheelScoreDisplay" class="wheel-score-display hidden"></p>
 
   <div class="wheel-wrapper">
     <div class="wheel-pointer-arrow">▼</div>
@@ -550,6 +560,7 @@
   <button id="wheelSpinBtn" onclick="spinWheel()">SPIN 🎰</button>
 
   <div id="wheelResultArea" style="display:none;">
+    <p id="wheelSpunByLabel" class="drawn-by-label hidden"></p>
     <div id="wheelCard" class="wheel-card-container">
       <div class="card-label" id="wheelCardLabel">ACTIVITY</div>
       <p id="wheelCardText"></p>
@@ -558,6 +569,16 @@
       <div id="wheelTimerDisplay" class="wheel-timer-display">0:30</div>
       <button id="wheelStartTimerBtn" onclick="startWheelTimer()">Start Timer ⏱</button>
     </div>
+
+    <div id="wheelJudgeSection" style="display:none; text-align:center; margin-top:15px;">
+      <p>💯 Award Points:</p>
+      <div id="wheelPointButtons"></div>
+    </div>
+
+    <div id="wheelWaitSection" style="display:none; text-align:center; margin-top:15px;">
+      <p id="wheelWaitText" class="judge-wait-text"></p>
+    </div>
+
     <button id="wheelNextTurnBtn" class="wheel-next-btn" style="display:none;" onclick="wheelNextTurn()">Next Turn ➡️</button>
   </div>
 </div>

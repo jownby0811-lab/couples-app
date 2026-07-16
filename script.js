@@ -8,6 +8,7 @@ window.showPage = function (pageId) {
   if (pageId === "account" && typeof renderAccountPage === "function") {
     renderAccountPage();
   }
+  if (typeof setGameSyncPage === "function") setGameSyncPage(pageId);
 };
 
 let johnScore = parseInt(localStorage.getItem("johnScore")) || 0;
@@ -854,6 +855,7 @@ function applyCardGenderStyle(cardElement, genderList) {
 }
 
 function getTruth() {
+  if (isSyncActive()) { syncDrawCard("truth"); return; }
   let tier = getSelectedTier();
   let fullList = gameData[tier].truths;
   let list = getFilteredList(fullList);
@@ -877,6 +879,7 @@ function getTruth() {
 }
 
 function getDare() {
+  if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getSelectedTier();
   let fullList = gameData[tier].dares;
   let list = getFilteredList(fullList);
@@ -902,11 +905,21 @@ function getDare() {
 // spin() replaced by spinWheel() — see SPIN WHEEL section below
 
 function updateScoreDisplay() {
+  if (isSyncActive()) {
+    let p1 = document.getElementById("player1Label");
+    let p2 = document.getElementById("player2Label");
+    if (p1) p1.innerText = gameSyncMyName || "You";
+    if (p2) p2.innerText = gameSyncPartnerName || "Partner";
+    document.getElementById("johnScoreDisplay").innerText = syncScores.mine;
+    document.getElementById("felicityScoreDisplay").innerText = syncScores.partner;
+    return;
+  }
   document.getElementById("johnScoreDisplay").innerText = johnScore;
   document.getElementById("felicityScoreDisplay").innerText = felicityScore;
 }
 
 function updateNameDisplays() {
+  if (isSyncActive()) return; // sync mode owns these labels via updateScoreDisplay()
   let p1 = document.getElementById("player1Label");
   let p2 = document.getElementById("player2Label");
   if (p1) p1.innerText = player1Name;
@@ -937,6 +950,7 @@ function showPointButtons(tier) {
 }
 
 function passTruth() {
+  if (isSyncActive()) { syncJudgeTruth("pass"); return; }
   let points = truthPoints[currentTier] || 0;
   if (currentPlayer === "john") {
     johnScore += points;
@@ -952,11 +966,13 @@ function passTruth() {
 }
 
 function failTruth() {
+  if (isSyncActive()) { syncJudgeTruth("fail"); return; }
   showStatus("No points awarded 😅");
   endTurn();
 }
 
 function awardPoints(points) {
+  if (isSyncActive()) { syncAwardPoints(points); return; }
   if (currentPlayer === "john") {
     johnScore += points;
     localStorage.setItem("johnScore", johnScore);
@@ -979,6 +995,10 @@ function endTurn() {
 }
 
 function resetGame() {
+  if (isSyncActive()) {
+    showStatus("Scores sync with your partner and can't be reset from one device.");
+    return;
+  }
   johnScore = 0;
   felicityScore = 0;
   currentPlayer = "john";
@@ -1024,6 +1044,7 @@ window.toggleDrinkMode = function () {
 };
 
 window.skipCard = function () {
+  if (isSyncActive()) { syncSkipCard("money"); return; }
   const penalty = truthPoints[currentTier] || 0;
   if (currentPlayer === "john") {
     johnScore = Math.max(0, johnScore - penalty);
@@ -1039,6 +1060,7 @@ window.skipCard = function () {
 };
 
 window.drinkSkip = function () {
+  if (isSyncActive()) { syncSkipCard("drink"); return; }
   const drinkCounts = { tease: 1, foreplay: 2, dirty: 3 };
   const count = drinkCounts[currentTier] || 1;
   const toast = document.getElementById("drinkToast");
@@ -1049,6 +1071,206 @@ window.drinkSkip = function () {
   }
   endTurn();
 };
+
+// ========================= //
+// TRUTH OR DARE SYNC        //
+// ========================= //
+// Two-device layer for Truth or Dare. Whoever draws is the performer;
+// their partner is always the judge, and judging controls only ever
+// render on the judge's device. Every device derives its state from
+// the game_events log, so a draw/skip/verdict looks identical no
+// matter which side triggered it.
+
+function renderSyncedCard(mode, tier, card, drawnByPartner) {
+  var cardEl = document.getElementById("todCard");
+  var text = getCardText(card);
+  var genders = getCardGender(card);
+  document.getElementById("cardLabel").innerText = tier.toUpperCase() + " " + mode.toUpperCase();
+  animateCardText(text);
+  applyCardGenderStyle(cardEl, genders);
+  cardEl.classList.remove("hidden-card");
+  cardEl.classList.remove("flipped");
+  cardEl.classList.remove(mode === "truth" ? "dare-card" : "truth-card");
+  cardEl.classList.add(mode === "truth" ? "truth-card" : "dare-card");
+  triggerBurnReveal(cardEl);
+
+  var label = document.getElementById("drawnByLabel");
+  if (label) {
+    if (drawnByPartner) {
+      label.innerText = "✋ Drawn by " + (gameSyncPartnerName || "your partner");
+      label.classList.remove("hidden");
+    } else {
+      label.classList.add("hidden");
+    }
+  }
+}
+
+function showTruthOrDareJudgeUI(mode, myRole) {
+  var pointSection = document.getElementById("pointSection");
+  var passFailSection = document.getElementById("passFailSection");
+  var judgeWaitSection = document.getElementById("judgeWaitSection");
+
+  pointSection.style.display = "none";
+  passFailSection.style.display = "none";
+  judgeWaitSection.style.display = "none";
+
+  if (myRole === "judge") {
+    if (mode === "dare") showPointButtons(currentTier);
+    else passFailSection.style.display = "block";
+  } else {
+    document.getElementById("judgeWaitText").innerText = (gameSyncPartnerName || "Your partner") + " is scoring you… 👀";
+    judgeWaitSection.style.display = "block";
+  }
+
+  showSkipSection(mode);
+  if (myRole === "judge") document.getElementById("skipSection").style.display = "none";
+}
+
+function endSyncTruthRound() {
+  syncTruthRound = null;
+  var pointSection = document.getElementById("pointSection");
+  var passFailSection = document.getElementById("passFailSection");
+  var judgeWaitSection = document.getElementById("judgeWaitSection");
+  var skipSection = document.getElementById("skipSection");
+  var label = document.getElementById("drawnByLabel");
+  if (pointSection) pointSection.style.display = "none";
+  if (passFailSection) passFailSection.style.display = "none";
+  if (judgeWaitSection) judgeWaitSection.style.display = "none";
+  if (skipSection) skipSection.style.display = "none";
+  if (label) label.classList.add("hidden");
+}
+
+function syncDrawCard(mode) {
+  var tier = getSelectedTier();
+  var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
+  var list = getFilteredList(fullList);
+  if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
+  var randomCard = list[Math.floor(Math.random() * list.length)];
+  var cardIndex = fullList.indexOf(randomCard);
+  var roundId = genRoundId();
+  var performerId = gameSyncMyId();
+
+  currentTier = tier;
+  syncTruthRound = { roundId: roundId, tier: tier, mode: mode, cardIndex: cardIndex, performerId: performerId, myRole: "performer" };
+  renderSyncedCard(mode, tier, randomCard, false);
+  showTruthOrDareJudgeUI(mode, "performer");
+
+  window.GameSync.send("card_drawn", {
+    roundId: roundId, mode: mode, tier: tier, cardIndex: cardIndex, performer_user_id: performerId
+  });
+}
+
+function restoreTruthOrDareRound(starterEvent) {
+  var p = starterEvent.payload || {};
+  var list = gameData[p.tier] && gameData[p.tier][p.mode === "truth" ? "truths" : "dares"];
+  var card = list && list[p.cardIndex];
+  if (!card) { endSyncTruthRound(); return; }
+  var myId = gameSyncMyId();
+  var myRole = p.performer_user_id === myId ? "performer" : "judge";
+  currentTier = p.tier;
+  syncTruthRound = { roundId: p.roundId, tier: p.tier, mode: p.mode, cardIndex: p.cardIndex, performerId: p.performer_user_id, myRole: myRole };
+  renderSyncedCard(p.mode, p.tier, card, myRole === "judge");
+  showTruthOrDareJudgeUI(p.mode, myRole);
+}
+
+function applyRemoteCardDrawn(ev) {
+  restoreTruthOrDareRound(ev);
+}
+
+function syncSkipCard(kind) {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer") return;
+  var round = syncTruthRound;
+  var tier = round.tier;
+  var payload = {
+    roundId: round.roundId, mode: round.mode, tier: tier, cardIndex: round.cardIndex,
+    performer_user_id: round.performerId, kind: kind
+  };
+
+  if (kind === "money") {
+    var penalty = truthPoints[tier] || 0;
+    payload.penalty = penalty;
+    applySyncScoreDelta(round.performerId, -penalty);
+    showStatus((gameSyncMyName || "You") + " -" + penalty + " 💸");
+  } else {
+    var drinkCounts = { tease: 1, foreplay: 2, dirty: 3 };
+    var count = drinkCounts[tier] || 1;
+    payload.drinks = count;
+    var toast = document.getElementById("drinkToast");
+    if (toast) {
+      toast.innerText = "🍺 Take " + count + " drink" + (count > 1 ? "s" : "") + "!";
+      toast.classList.add("show");
+      setTimeout(function () { toast.classList.remove("show"); }, 2000);
+    }
+  }
+
+  endSyncTruthRound();
+  window.GameSync.send("card_skipped", payload);
+}
+
+function applyRemoteCardSkipped(ev) {
+  var p = ev.payload || {};
+  if (p.kind === "money") {
+    applySyncScoreDelta(p.performer_user_id, -(p.penalty || 0));
+    showStatus((gameSyncPartnerName || "Partner") + " -" + (p.penalty || 0) + " 💸");
+  } else {
+    var toast = document.getElementById("drinkToast");
+    if (toast) {
+      var n = p.drinks || 1;
+      toast.innerText = "🍺 " + (gameSyncPartnerName || "Partner") + " takes " + n + " drink" + (n > 1 ? "s" : "") + "!";
+      toast.classList.add("show");
+      setTimeout(function () { toast.classList.remove("show"); }, 2000);
+    }
+  }
+  endSyncTruthRound();
+}
+
+function syncAwardPoints(amount) {
+  if (!syncTruthRound || syncTruthRound.myRole !== "judge" || syncTruthRound.mode !== "dare") return;
+  var round = syncTruthRound;
+  applySyncScoreDelta(round.performerId, amount);
+  showStatus((gameSyncPartnerName || "Partner") + " +" + amount + " 🔥");
+  showSyncOutcome("todCard", amount > 0);
+  endSyncTruthRound();
+  window.GameSync.send("points_awarded", {
+    roundId: round.roundId, performer_user_id: round.performerId, amount: amount, tier: round.tier, source: "truth_or_dare"
+  });
+}
+
+function syncJudgeTruth(verdict) {
+  if (!syncTruthRound || syncTruthRound.myRole !== "judge" || syncTruthRound.mode !== "truth") return;
+  var round = syncTruthRound;
+  var points = verdict === "pass" ? (truthPoints[round.tier] || 0) : 0;
+  if (points > 0) applySyncScoreDelta(round.performerId, points);
+  showStatus(verdict === "pass" ? ((gameSyncPartnerName || "Partner") + " +" + points + " 🔥") : "No points awarded 😅");
+  showSyncOutcome("todCard", verdict === "pass");
+  endSyncTruthRound();
+  window.GameSync.send("truth_judged", {
+    roundId: round.roundId, performer_user_id: round.performerId, verdict: verdict, points: points, tier: round.tier
+  });
+}
+
+function applyRemotePointsAwarded(ev) {
+  var p = ev.payload || {};
+  applySyncScoreDelta(p.performer_user_id, p.amount || 0);
+  var isWheel = p.source === "wheel";
+  showStatus("You +" + (p.amount || 0) + " 🔥");
+  showSyncOutcome(isWheel ? "wheelCard" : "todCard", (p.amount || 0) > 0);
+  if (isWheel) {
+    resetWheelSyncUI();
+    var nb = document.getElementById("wheelNextTurnBtn");
+    if (nb) nb.style.display = "inline-block";
+  } else {
+    endSyncTruthRound();
+  }
+}
+
+function applyRemoteTruthJudged(ev) {
+  var p = ev.payload || {};
+  if (p.points) applySyncScoreDelta(p.performer_user_id, p.points);
+  showStatus(p.verdict === "pass" ? ("You +" + p.points + " 🔥") : "No points awarded this time 😅");
+  showSyncOutcome("todCard", p.verdict === "pass");
+  endSyncTruthRound();
+}
 
 window.showOnboarding = function () {
   document.getElementById("onboarding").classList.remove("hidden");
@@ -1373,6 +1595,7 @@ window.renderAccountPage = renderAccountPage;
 
 function handleBackendChange() {
   if (typeof syncPositionRatingsFromServer === "function") syncPositionRatingsFromServer();
+  if (typeof handleGameBackendChange === "function") handleGameBackendChange();
   if (window.Backend.isRecoveryMode()) {
     window.showPage("account");
     return;
@@ -1385,7 +1608,215 @@ window.addEventListener("load", function () {
   if (!window.Backend || !window.Backend.isAvailable()) return;
   window.Backend.onChange(handleBackendChange);
   window.Backend.init();
+  if (window.GameSync) window.GameSync.onConnectionChange(updateConnIndicators);
 });
+
+// ========================= //
+// GAME SYNC — SHARED        //
+// ========================= //
+// Realtime layer shared by Truth or Dare and Spin Wheel. Only ever
+// active for logged-in, couple-linked users — everyone else keeps the
+// exact original single-device behavior, untouched, below.
+
+var gameSyncUnsubscribe = null;
+var gameSyncPage = null; // 'truth' | 'wheel' | null — which page(s) want the subscription
+var gameSyncMyName = "You";
+var gameSyncPartnerName = "";
+var syncScores = { mine: 0, partner: 0 };
+var syncTruthRound = null; // { roundId, tier, mode, cardIndex, performerId, myRole }
+var syncWheelRound = null; // { roundId, tier, segmentIndex, tag, cardKind, cardIndex, positionId, performerId, myRole }
+var wheelPendingForcedCard = null;
+
+function isSyncActive() {
+  return !!(window.GameSync && window.GameSync.isActive());
+}
+
+function gameSyncMyId() {
+  return window.GameSync ? window.GameSync.getMyUserId() : null;
+}
+
+function genRoundId() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function applySyncScoreDelta(userId, delta) {
+  if (!userId || !delta) return;
+  if (userId === gameSyncMyId()) syncScores.mine = Math.max(0, syncScores.mine + delta);
+  else syncScores.partner = Math.max(0, syncScores.partner + delta);
+  updateScoreDisplay();
+  updateWheelScoreDisplay();
+}
+
+function showSyncOutcome(elId, isGood) {
+  var el = document.getElementById(elId);
+  if (!el) return;
+  var cls = isGood ? "sync-celebrate" : "sync-fail";
+  el.classList.remove("sync-celebrate", "sync-fail");
+  void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(function () { el.classList.remove(cls); }, 1400);
+}
+
+// ---- subscription lifecycle, tied to whichever of the two pages is active ----
+
+function setGameSyncPage(pageId) {
+  gameSyncPage = (pageId === "truth" || pageId === "wheel") ? pageId : null;
+  reconcileGameSyncSubscription();
+}
+
+function reconcileGameSyncSubscription() {
+  var shouldBeSubscribed = !!gameSyncPage && isSyncActive();
+  if (shouldBeSubscribed && !gameSyncUnsubscribe) {
+    gameSyncUnsubscribe = window.GameSync.subscribe(handleGameEvent);
+    rebuildGameStateFromServer();
+  } else if (!shouldBeSubscribed && gameSyncUnsubscribe) {
+    gameSyncUnsubscribe();
+    gameSyncUnsubscribe = null;
+    resetSyncRoundsUI();
+  }
+  updateConnIndicators();
+  applySyncVisibility();
+}
+
+function resetSyncRoundsUI() {
+  endSyncTruthRound();
+  resetWheelSyncUI();
+  syncScores = { mine: 0, partner: 0 };
+}
+
+function updateConnIndicators() {
+  var status = window.GameSync ? window.GameSync.getConnectionStatus() : "solo";
+  var linked = isSyncActive();
+  ["truthConnIndicator", "wheelConnIndicator"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (!linked) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    if (status === "synced") {
+      el.classList.add("conn-synced");
+      el.classList.remove("conn-solo");
+      el.innerText = "🟢 Synced with " + (gameSyncPartnerName || "your partner");
+    } else {
+      el.classList.add("conn-solo");
+      el.classList.remove("conn-synced");
+      el.innerText = "🟡 Playing solo";
+    }
+  });
+}
+
+function applySyncVisibility() {
+  var synced = isSyncActive();
+  if (!synced) {
+    var lbl = document.getElementById("drawnByLabel");
+    if (lbl) lbl.classList.add("hidden");
+    var wlbl = document.getElementById("wheelSpunByLabel");
+    if (wlbl) wlbl.classList.add("hidden");
+  }
+  var turnEl = document.getElementById("turnDisplay");
+  if (turnEl && synced) turnEl.innerText = "Either of you can go 🎲";
+  else if (turnEl) updateTurnDisplay();
+  var wheelTurnEl = document.getElementById("wheelTurnDisplay");
+  if (wheelTurnEl && synced) wheelTurnEl.innerText = "Either of you can spin 🎡";
+  else if (wheelTurnEl) updateWheelTurnDisplay();
+  updateScoreDisplay();
+  updateWheelScoreDisplay();
+}
+
+function updateWheelScoreDisplay() {
+  var el = document.getElementById("wheelScoreDisplay");
+  if (!el) return;
+  if (!isSyncActive()) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  el.innerText = (gameSyncMyName || "You") + ": " + syncScores.mine + " 🔥  |  " + (gameSyncPartnerName || "Partner") + ": " + syncScores.partner + " 🔥";
+}
+
+function handleGameBackendChange() {
+  gameSyncPartnerName = (window.GameSync && window.GameSync.getPartnerName()) || "";
+  if (window.Backend && window.Backend.isLoggedIn()) {
+    window.Backend.getProfile().then(function (p) {
+      gameSyncMyName = (p && p.display_name) || "You";
+      applySyncVisibility();
+    });
+  } else {
+    gameSyncMyName = "You";
+  }
+  reconcileGameSyncSubscription();
+}
+
+// ---- incoming event dispatch ----
+
+function handleGameEvent(ev) {
+  if (!ev || ev.user_id === gameSyncMyId()) return; // skip our own echoes; already rendered optimistically
+  switch (ev.event_type) {
+    case "card_drawn": applyRemoteCardDrawn(ev); break;
+    case "card_skipped": applyRemoteCardSkipped(ev); break;
+    case "points_awarded": applyRemotePointsAwarded(ev); break;
+    case "truth_judged": applyRemoteTruthJudged(ev); break;
+    case "wheel_spun": applyRemoteWheelSpun(ev); break;
+  }
+}
+
+// ---- rebuild on load / reconnect ----
+
+function computeScoresFromEvents(events) {
+  var myId = gameSyncMyId();
+  var totals = {};
+  function add(uid, amount) {
+    if (!uid || !amount) return;
+    totals[uid] = Math.max(0, (totals[uid] || 0) + amount);
+  }
+  events.forEach(function (ev) {
+    var p = ev.payload || {};
+    if (ev.event_type === "points_awarded") add(p.performer_user_id, p.amount || 0);
+    else if (ev.event_type === "truth_judged") add(p.performer_user_id, p.points || 0);
+    else if (ev.event_type === "card_skipped" && p.kind === "money") add(p.performer_user_id || ev.user_id, -(p.penalty || 0));
+  });
+  var mine = totals[myId] || 0;
+  var partner = 0;
+  Object.keys(totals).forEach(function (uid) { if (uid !== myId) partner += totals[uid]; });
+  return { mine: mine, partner: partner };
+}
+
+function findPendingRound(events, kind) {
+  var resolvedRoundIds = {};
+  events.forEach(function (ev) {
+    if (ev.event_type === "card_skipped" || ev.event_type === "truth_judged" || ev.event_type === "points_awarded") {
+      var rid = (ev.payload || {}).roundId;
+      if (rid) resolvedRoundIds[rid] = true;
+    }
+  });
+  for (var i = events.length - 1; i >= 0; i--) {
+    var ev = events[i];
+    if (kind === "truth_or_dare" && ev.event_type === "card_drawn") {
+      return resolvedRoundIds[(ev.payload || {}).roundId] ? null : ev;
+    }
+    if (kind === "wheel" && ev.event_type === "wheel_spun") {
+      return resolvedRoundIds[(ev.payload || {}).roundId] ? null : ev;
+    }
+  }
+  return null;
+}
+
+async function rebuildGameStateFromServer() {
+  if (!window.GameSync || !window.GameSync.isActive()) return;
+  gameSyncPartnerName = window.GameSync.getPartnerName() || "";
+  var events = await window.GameSync.fetchRecent(200);
+
+  var scores = computeScoresFromEvents(events);
+  syncScores.mine = scores.mine;
+  syncScores.partner = scores.partner;
+  updateScoreDisplay();
+  updateWheelScoreDisplay();
+
+  var truthStarter = findPendingRound(events, "truth_or_dare");
+  if (truthStarter) restoreTruthOrDareRound(truthStarter);
+  else endSyncTruthRound();
+
+  var wheelStarter = findPendingRound(events, "wheel");
+  if (wheelStarter) restoreWheelRound(wheelStarter);
+  else resetWheelSyncUI();
+}
 
 // ========================= //
 // POSITIONS PAGE            //
@@ -1864,26 +2295,34 @@ function drawWheelCanvas(rotDeg, landedSeg) {
   ctx.stroke();
 }
 
-window.spinWheel = function () {
-  if (wheelIsSpinning) return;
-
+function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
   var spinBtn = document.getElementById('wheelSpinBtn');
   if (spinBtn) spinBtn.disabled = true;
 
   document.getElementById('wheelResultArea').style.display = 'none';
   document.getElementById('wheelTimerArea').style.display = 'none';
   document.getElementById('wheelNextTurnBtn').style.display = 'none';
+  var judgeSection = document.getElementById('wheelJudgeSection');
+  var waitSection = document.getElementById('wheelWaitSection');
+  if (judgeSection) judgeSection.style.display = 'none';
+  if (waitSection) waitSection.style.display = 'none';
   if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
   wheelTimerRunning = false;
 
   wheelIsSpinning = true;
-  wheelLandedSegment = Math.floor(Math.random() * 6);
+  wheelLandedSegment = segmentIndex;
+  wheelPendingForcedCard = forcedCard || null;
 
   // Pointer at top = 270° screen. Segment i center = (i+0.5)*60° local.
   // To land: rot + (i+0.5)*60 ≡ 270 (mod 360) → targetNorm = (270 - (i+0.5)*60) mod 360
   var segAngle = 60;
-  var randOff = (Math.random() - 0.5) * segAngle * 0.44;
-  var targetNorm = ((270 - (wheelLandedSegment + 0.5) * segAngle + randOff) % 360 + 360) % 360;
+  var targetNorm;
+  if (targetNormOverride != null) {
+    targetNorm = ((targetNormOverride % 360) + 360) % 360;
+  } else {
+    var randOff = (Math.random() - 0.5) * segAngle * 0.44;
+    targetNorm = ((270 - (segmentIndex + 0.5) * segAngle + randOff) % 360 + 360) % 360;
+  }
   var currentNorm = ((wheelRotationDeg % 360) + 360) % 360;
   var delta = ((targetNorm - currentNorm) % 360 + 360) % 360;
   if (delta < 15) delta += 360;
@@ -1907,6 +2346,14 @@ window.spinWheel = function () {
     }
   }
   requestAnimationFrame(animate);
+
+  return targetNorm;
+}
+
+window.spinWheel = function () {
+  if (wheelIsSpinning) return;
+  if (isSyncActive()) { syncSpin(); return; }
+  startWheelSpinAnimation(Math.floor(Math.random() * 6), null, null);
 };
 
 function onWheelSpinComplete() {
@@ -1914,10 +2361,20 @@ function onWheelSpinComplete() {
   drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
   var spinBtn = document.getElementById('wheelSpinBtn');
   if (spinBtn) spinBtn.disabled = false;
-  setTimeout(showWheelResult, 700);
+  setTimeout(function () {
+    showWheelResult(wheelPendingForcedCard);
+    wheelPendingForcedCard = null;
+  }, 700);
 }
 
-function showWheelResult() {
+function wheelCardColorClass() {
+  if (isSyncActive() && syncWheelRound) {
+    return syncWheelRound.myRole === 'performer' ? 'player2-card' : 'player1-card';
+  }
+  return wheelCurrentPlayer === 'john' ? 'player1-card' : 'player2-card';
+}
+
+function showWheelResult(forcedCard, skipTimerSchedule) {
   var tierEl = document.getElementById('wheelTierSelect');
   var tier = tierEl ? tierEl.value : 'tease';
   var seg = wheelSegmentDefs[tier][wheelLandedSegment];
@@ -1929,13 +2386,19 @@ function showWheelResult() {
 
   // Player border color
   cardEl.classList.remove('player1-card', 'player2-card');
-  cardEl.classList.add(wheelCurrentPlayer === 'john' ? 'player1-card' : 'player2-card');
+  cardEl.classList.add(wheelCardColorClass());
 
   if (seg.tag === 'position') {
-    var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
-    var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
-    if (!pool.length) pool = positionsData;
-    var pos = pool[Math.floor(Math.random() * pool.length)];
+    var pos = null;
+    if (forcedCard && forcedCard.positionId != null) {
+      pos = positionsData.filter(function (p) { return p.id === forcedCard.positionId; })[0] || null;
+    }
+    if (!pos) {
+      var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
+      var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
+      if (!pool.length) pool = positionsData;
+      pos = pool[Math.floor(Math.random() * pool.length)];
+    }
     cardLabel.innerText = '🔀 POSITION';
     cardText.innerHTML =
       '<strong style="font-size:17px;">' + pos.name + '</strong>' +
@@ -1943,9 +2406,15 @@ function showWheelResult() {
       '<span style="font-size:11px;opacity:0.58;display:block;margin-top:8px;">💡 ' + pos.tips + '</span>';
   } else {
     var dares = gameData[tier].dares;
-    var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
-    if (!filtered.length) filtered = dares;
-    var dare = filtered[Math.floor(Math.random() * filtered.length)];
+    var dare = null;
+    if (forcedCard && forcedCard.cardIndex != null) {
+      dare = dares[forcedCard.cardIndex] || null;
+    }
+    if (!dare) {
+      var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
+      if (!filtered.length) filtered = dares;
+      dare = filtered[Math.floor(Math.random() * filtered.length)];
+    }
     cardLabel.innerText = seg.emoji + ' ' + seg.label.toUpperCase();
     cardText.innerText = dare.text;
   }
@@ -1958,7 +2427,7 @@ function showWheelResult() {
   cardEl.classList.add('wheel-burn-reveal');
   setTimeout(function () { cardEl.classList.remove('wheel-burn-reveal'); }, 1900);
 
-  setTimeout(showWheelTimer, 1500);
+  if (!skipTimerSchedule) setTimeout(showWheelTimer, 1500);
 }
 
 function showWheelTimer() {
@@ -2003,8 +2472,12 @@ window.startWheelTimer = function () {
       if (d) { d.innerText = 'Done! 🔥'; d.className = 'wheel-timer-display wt-done'; }
 
       setTimeout(function () {
-        var nb = document.getElementById('wheelNextTurnBtn');
-        if (nb) nb.style.display = 'inline-block';
+        if (isSyncActive() && syncWheelRound && syncWheelRound.cardKind === 'dare') {
+          showWheelJudgeUI();
+        } else {
+          var nb = document.getElementById('wheelNextTurnBtn');
+          if (nb) nb.style.display = 'inline-block';
+        }
       }, 500);
     } else {
       if (d) d.innerText = formatWheelTime(wheelTimerSeconds);
@@ -2013,6 +2486,16 @@ window.startWheelTimer = function () {
 };
 
 window.wheelNextTurn = function () {
+  if (isSyncActive()) {
+    resetWheelSyncUI();
+    document.getElementById('wheelResultArea').style.display = 'none';
+    document.getElementById('wheelTimerArea').style.display = 'none';
+    document.getElementById('wheelNextTurnBtn').style.display = 'none';
+    if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
+    wheelTimerRunning = false;
+    drawWheelCanvas(wheelRotationDeg, -1);
+    return;
+  }
   wheelCurrentPlayer = wheelCurrentPlayer === 'john' ? 'felicity' : 'john';
   updateWheelTurnDisplay();
   document.getElementById('wheelResultArea').style.display = 'none';
@@ -2022,5 +2505,168 @@ window.wheelNextTurn = function () {
   wheelTimerRunning = false;
   drawWheelCanvas(wheelRotationDeg, -1);
 };
+
+// ========================= //
+// SPIN WHEEL SYNC           //
+// ========================= //
+// Same performer/judge role rule as Truth or Dare, reusing its
+// 'points_awarded' event so both modes feed one running score. The
+// outcome (segment + exact landing angle + which card/position) is
+// decided once by whoever spins and broadcast — the partner's wheel
+// replays that same outcome rather than rolling its own.
+
+function syncSpin() {
+  var tierEl = document.getElementById('wheelTierSelect');
+  var tier = tierEl ? tierEl.value : 'tease';
+  var segmentIndex = Math.floor(Math.random() * 6);
+  var seg = wheelSegmentDefs[tier][segmentIndex];
+  var roundId = genRoundId();
+  var performerId = gameSyncMyId();
+
+  var forcedCard = { cardIndex: null, positionId: null };
+  if (seg.tag === 'position') {
+    var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
+    var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
+    if (!pool.length) pool = positionsData;
+    var pos = pool[Math.floor(Math.random() * pool.length)];
+    forcedCard.positionId = pos.id;
+  } else {
+    var dares = gameData[tier].dares;
+    var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
+    if (!filtered.length) filtered = dares;
+    var dare = filtered[Math.floor(Math.random() * filtered.length)];
+    forcedCard.cardIndex = dares.indexOf(dare);
+  }
+
+  syncWheelRound = {
+    roundId: roundId, tier: tier, segmentIndex: segmentIndex, tag: seg.tag,
+    cardKind: seg.tag === 'position' ? 'position' : 'dare',
+    cardIndex: forcedCard.cardIndex, positionId: forcedCard.positionId,
+    performerId: performerId, myRole: 'performer'
+  };
+
+  var label = document.getElementById('wheelSpunByLabel');
+  if (label) label.classList.add('hidden');
+
+  var targetNorm = startWheelSpinAnimation(segmentIndex, null, forcedCard);
+
+  window.GameSync.send('wheel_spun', {
+    roundId: roundId, tier: tier, segmentIndex: segmentIndex, targetRotationDeg: targetNorm,
+    tag: seg.tag, cardKind: syncWheelRound.cardKind, cardIndex: forcedCard.cardIndex, positionId: forcedCard.positionId,
+    performer_user_id: performerId
+  });
+}
+
+function applyRemoteWheelSpun(ev) {
+  var p = ev.payload || {};
+  var myId = gameSyncMyId();
+  var myRole = p.performer_user_id === myId ? 'performer' : 'judge';
+
+  var tierEl = document.getElementById('wheelTierSelect');
+  if (tierEl) tierEl.value = p.tier;
+
+  syncWheelRound = {
+    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
+    cardKind: p.cardKind, cardIndex: p.cardIndex, positionId: p.positionId,
+    performerId: p.performer_user_id, myRole: myRole
+  };
+
+  var label = document.getElementById('wheelSpunByLabel');
+  if (label) {
+    label.innerText = '🎡 Spun by ' + (gameSyncPartnerName || 'your partner');
+    label.classList.remove('hidden');
+  }
+
+  if (wheelIsSpinning) return;
+  startWheelSpinAnimation(p.segmentIndex, p.targetRotationDeg, { cardIndex: p.cardIndex, positionId: p.positionId });
+}
+
+// Reconnect/rebuild path: jump straight to the resolved reveal + the
+// right judge/wait controls, rather than replaying the spin animation
+// and a from-scratch timer for a round that's already in progress.
+function restoreWheelRound(starterEvent) {
+  var p = starterEvent.payload || {};
+  var myId = gameSyncMyId();
+  var myRole = p.performer_user_id === myId ? "performer" : "judge";
+
+  var tierEl = document.getElementById("wheelTierSelect");
+  if (tierEl) tierEl.value = p.tier;
+  wheelLandedSegment = p.segmentIndex;
+  if (p.targetRotationDeg != null) wheelRotationDeg = p.targetRotationDeg;
+  drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+
+  syncWheelRound = {
+    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
+    cardKind: p.cardKind, cardIndex: p.cardIndex, positionId: p.positionId,
+    performerId: p.performer_user_id, myRole: myRole
+  };
+
+  var label = document.getElementById("wheelSpunByLabel");
+  if (label) {
+    if (myRole === "judge") {
+      label.innerText = "🎡 Spun by " + (gameSyncPartnerName || "your partner");
+      label.classList.remove("hidden");
+    } else {
+      label.classList.add("hidden");
+    }
+  }
+
+  showWheelResult({ cardIndex: p.cardIndex, positionId: p.positionId }, true);
+  var timerArea = document.getElementById("wheelTimerArea");
+  if (timerArea) timerArea.style.display = "none";
+
+  if (p.cardKind === "dare") {
+    showWheelJudgeUI();
+  } else {
+    var nb = document.getElementById("wheelNextTurnBtn");
+    if (nb) nb.style.display = "inline-block";
+  }
+}
+
+function resetWheelSyncUI() {
+  syncWheelRound = null;
+  var judgeSection = document.getElementById('wheelJudgeSection');
+  var waitSection = document.getElementById('wheelWaitSection');
+  var label = document.getElementById('wheelSpunByLabel');
+  if (judgeSection) judgeSection.style.display = 'none';
+  if (waitSection) waitSection.style.display = 'none';
+  if (label) label.classList.add('hidden');
+}
+
+function showWheelJudgeUI() {
+  if (!syncWheelRound) return;
+  var judgeSection = document.getElementById('wheelJudgeSection');
+  var waitSection = document.getElementById('wheelWaitSection');
+  if (syncWheelRound.myRole === 'judge') {
+    var container = document.getElementById('wheelPointButtons');
+    container.innerHTML = '';
+    (pointRanges[syncWheelRound.tier] || []).forEach(function (points) {
+      var btn = document.createElement('button');
+      btn.innerText = points;
+      btn.onclick = function () { syncAwardWheelPoints(points); };
+      container.appendChild(btn);
+    });
+    judgeSection.style.display = 'block';
+    waitSection.style.display = 'none';
+  } else {
+    document.getElementById('wheelWaitText').innerText = (gameSyncPartnerName || 'Your partner') + ' is scoring you… 👀';
+    waitSection.style.display = 'block';
+    judgeSection.style.display = 'none';
+  }
+}
+
+function syncAwardWheelPoints(amount) {
+  if (!syncWheelRound || syncWheelRound.myRole !== 'judge') return;
+  var round = syncWheelRound;
+  applySyncScoreDelta(round.performerId, amount);
+  showStatus((gameSyncPartnerName || 'Partner') + ' +' + amount + ' 🔥');
+  showSyncOutcome('wheelCard', amount > 0);
+  resetWheelSyncUI();
+  var nb = document.getElementById('wheelNextTurnBtn');
+  if (nb) nb.style.display = 'inline-block';
+  window.GameSync.send('points_awarded', {
+    roundId: round.roundId, performer_user_id: round.performerId, amount: amount, tier: round.tier, source: 'wheel'
+  });
+}
 
 window.addEventListener('load', function () { initWheelPage(); });

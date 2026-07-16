@@ -205,6 +205,119 @@
     notify();
   }
 
+  // ---- Game events (realtime sync for Truth or Dare / Spin Wheel) ----
+  // One shared channel per couple, fanned out to any number of local
+  // listeners so both game modes can subscribe through the same
+  // connection instead of opening one each.
+
+  var gameChannel = null;
+  var gameChannelCoupleId = null;
+  var gameEventListeners = [];
+  var connectionStatus = "solo"; // "solo" | "connecting" | "synced"
+  var connectionListeners = [];
+
+  function setConnectionStatus(next) {
+    if (connectionStatus === next) return;
+    connectionStatus = next;
+    connectionListeners.forEach(function (fn) {
+      try { fn(connectionStatus); } catch (e) { console.error(e); }
+    });
+  }
+
+  function isGameSyncActive() {
+    return isLoggedIn() && isLinked();
+  }
+
+  function teardownGameChannel() {
+    if (gameChannel && client) {
+      try { client.removeChannel(gameChannel); } catch (e) { /* already gone */ }
+    }
+    gameChannel = null;
+    gameChannelCoupleId = null;
+    setConnectionStatus("solo");
+  }
+
+  function ensureGameChannel() {
+    if (!client || !isGameSyncActive()) {
+      teardownGameChannel();
+      return;
+    }
+    var coupleId = state.myCouple.coupleId;
+    if (gameChannel && gameChannelCoupleId === coupleId) return;
+    teardownGameChannel();
+    gameChannelCoupleId = coupleId;
+    setConnectionStatus("connecting");
+    gameChannel = client
+      .channel("game-events-" + coupleId)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "game_events", filter: "couple_id=eq." + coupleId },
+        function (payload) {
+          gameEventListeners.forEach(function (fn) {
+            try { fn(payload.new); } catch (e) { console.error(e); }
+          });
+        }
+      )
+      .subscribe(function (status) {
+        if (status === "SUBSCRIBED") setConnectionStatus("synced");
+        else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") setConnectionStatus("solo");
+        else setConnectionStatus("connecting");
+      });
+  }
+
+  function subscribeGameEvents(onEvent) {
+    gameEventListeners.push(onEvent);
+    ensureGameChannel();
+    return function unsubscribe() {
+      gameEventListeners = gameEventListeners.filter(function (fn) { return fn !== onEvent; });
+      if (gameEventListeners.length === 0) teardownGameChannel();
+    };
+  }
+
+  async function sendGameEvent(eventType, payload) {
+    if (!client || !state.session || !isLinked()) return { error: new Error("Not synced") };
+    var row = {
+      couple_id: state.myCouple.coupleId,
+      user_id: state.session.user.id,
+      event_type: eventType,
+      payload: payload || {}
+    };
+    try {
+      var { error } = await client.from("game_events").insert(row);
+      if (error) throw error;
+      return { error: null };
+    } catch (e) {
+      console.warn("Failed to send game event", eventType, e);
+      return { error: e };
+    }
+  }
+
+  async function fetchRecentGameEvents(limit) {
+    if (!client || !state.session || !isLinked()) return [];
+    try {
+      var { data, error } = await client
+        .from("game_events")
+        .select("id, user_id, event_type, payload, created_at")
+        .eq("couple_id", state.myCouple.coupleId)
+        .order("created_at", { ascending: true })
+        .limit(limit || 200);
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn("Failed to fetch recent game events", e);
+      return [];
+    }
+  }
+
+  // Re-subscribe (or tear down) whenever auth/couple state changes — e.g.
+  // sign-out, unlink, or a session restored on a fresh load — but only if
+  // something is actually listening right now.
+  listeners.push(function () {
+    if (gameEventListeners.length === 0) return;
+    if (isGameSyncActive()) ensureGameChannel();
+    else teardownGameChannel();
+  });
+
   // ---- Generic preferences (reusable for truth/dare/position/roleplay) ----
 
   function localKey(itemType) { return "prefRatings_" + itemType; }
@@ -298,5 +411,16 @@
     saveRating: saveRating,
     loadRatings: loadRatings,
     getMutualMatches: getMutualMatches
+  };
+
+  window.GameSync = {
+    isActive: isGameSyncActive,
+    getConnectionStatus: function () { return connectionStatus; },
+    onConnectionChange: function (fn) { connectionListeners.push(fn); },
+    getMyUserId: function () { return state.session ? state.session.user.id : null; },
+    getPartnerName: function () { return state.myCouple ? state.myCouple.partnerName : null; },
+    subscribe: subscribeGameEvents,
+    send: sendGameEvent,
+    fetchRecent: fetchRecentGameEvents
   };
 })();
