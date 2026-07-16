@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Beta Feedback</title>
+    <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&amp;family=Poppins:wght@300;400;600&amp;display=swap'>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+
+  <body>
+
+    <div class="topbar">
+      <a href="index.html" class="auth-link feedback-topbar-link">← Back to App</a>
+    </div>
+
+    <div class="feedback-page">
+      <div class="feedback-header">
+        <h1>Beta Feedback</h1>
+        <p class="auth-sub">Two minutes, brutally honest. This shapes what we build next.</p>
+      </div>
+
+      <form id="feedbackForm" class="feedback-form">
+
+        <div class="feedback-section">
+          <div class="pos-section-title">Setup</div>
+          <div class="onboarding-field">
+            <label for="fbDevice">What phone and browser are you using? Home screen app or browser tab?</label>
+            <input id="fbDevice" type="text" placeholder="e.g. iPhone 14, Safari, added to Home Screen" autocomplete="off" maxlength="200">
+          </div>
+        </div>
+
+        <div class="feedback-section">
+          <div class="pos-section-title">Getting Started</div>
+          <div class="onboarding-field">
+            <label>How smooth was signing up and connecting with your partner? <span class="feedback-required">*</span></label>
+            <div class="score-scale" id="fbScoreScale">
+              <button type="button" class="score-btn" data-score="1">1</button>
+              <button type="button" class="score-btn" data-score="2">2</button>
+              <button type="button" class="score-btn" data-score="3">3</button>
+              <button type="button" class="score-btn" data-score="4">4</button>
+              <button type="button" class="score-btn" data-score="5">5</button>
+            </div>
+            <div class="score-scale-labels">
+              <span>1 · Painful</span>
+              <span>5 · Effortless</span>
+            </div>
+          </div>
+          <div class="onboarding-field">
+            <label for="fbOnboardingNotes">If anything confused you, what was it — at the exact moment it happened?</label>
+            <textarea id="fbOnboardingNotes" rows="3" placeholder="Optional"></textarea>
+          </div>
+        </div>
+
+        <div class="feedback-section">
+          <div class="pos-section-title">Playing</div>
+          <div class="onboarding-field">
+            <label for="fbDiscoverNotes">After you both rated positions, how did "We Both Want This" feel — accurate, surprising, exciting, off?</label>
+            <textarea id="fbDiscoverNotes" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <div class="onboarding-field">
+            <label>Which mode did you spend the most time in?</label>
+            <div class="feedback-chips" id="fbModeChips">
+              <span class="pos-chip" data-mode="Truth or Dare">Truth or Dare</span>
+              <span class="pos-chip" data-mode="Positions">Positions</span>
+              <span class="pos-chip" data-mode="Spin Wheel">Spin Wheel</span>
+            </div>
+            <input id="fbModeWhy" type="text" placeholder="Why? (optional)" autocomplete="off" maxlength="200" class="feedback-why-input">
+          </div>
+          <div class="onboarding-field">
+            <label for="fbAwkwardMoment">Was there a moment the app felt awkward or you almost put it down? What was happening?</label>
+            <textarea id="fbAwkwardMoment" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <div class="onboarding-field">
+            <label for="fbBestMoment">What was the single best moment — the thing that made you laugh or feel closer?</label>
+            <textarea id="fbBestMoment" rows="3" placeholder="Optional"></textarea>
+          </div>
+        </div>
+
+        <div class="feedback-section">
+          <div class="pos-section-title">Wrap-up</div>
+          <div class="onboarding-field">
+            <label for="fbBugs">Did anything break? What did you tap, what did you expect, what happened instead?</label>
+            <textarea id="fbBugs" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <div class="onboarding-field">
+            <label for="fbPriceExpectation">If this app cost money, what would you expect to pay — and what one addition would make that price feel obvious?</label>
+            <textarea id="fbPriceExpectation" rows="3" placeholder="Optional"></textarea>
+          </div>
+          <div class="onboarding-field">
+            <label for="fbMissing">What's missing that you assumed would be there?</label>
+            <textarea id="fbMissing" rows="3" placeholder="Optional"></textarea>
+          </div>
+        </div>
+
+        <button type="submit" id="fbSubmitBtn">Send Feedback 💌</button>
+        <p id="fbError" class="auth-error"></p>
+      </form>
+
+      <div id="fbThankYou" class="feedback-thankyou hidden">
+        <h2 class="auth-title">Thank you 💕</h2>
+        <p class="auth-sub">Your feedback just went straight into the pile we're actually reading. Seriously — thank you for taking the time to be honest with us.</p>
+        <a href="index.html" class="feedback-back-link">← Back to the app</a>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="./feedback.js"></script>
+
+  </body>
+
+</html>
