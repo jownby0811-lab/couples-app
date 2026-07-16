@@ -21,7 +21,8 @@
 
   var state = {
     session: null,
-    coupleId: null
+    myCouple: null, // { coupleId, inviteCode, partnerName } | null
+    recoveryMode: false
   };
 
   var listeners = [];
@@ -39,24 +40,33 @@
     if (m.indexOf("invalid invite code") !== -1) return "That invite code doesn't look right. Double-check with your partner.";
     if (m.indexOf("couple is full") !== -1) return "That couple already has two people linked.";
     if (m.indexOf("not authenticated") !== -1) return "Please sign in first.";
+    if (m.indexOf("user already registered") !== -1) return "An account with that email already exists — try signing in instead.";
+    if (m.indexOf("invalid login credentials") !== -1) return "Incorrect email or password.";
+    if (m.indexOf("email not confirmed") !== -1) return "Please confirm your email before signing in.";
     return msg || fallback || "Something went wrong. Please try again.";
   }
 
-  async function refreshCoupleStatus() {
+  function currentPageUrl() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  async function refreshMyCouple() {
     if (!client || !state.session) {
-      state.coupleId = null;
+      state.myCouple = null;
       return null;
     }
     try {
-      var uid = state.session.user.id;
-      var res = await client.from("couple_members").select("couple_id").eq("user_id", uid).maybeSingle();
-      if (res.error) throw res.error;
-      state.coupleId = res.data ? res.data.couple_id : null;
+      var { data, error } = await client.rpc("get_my_couple");
+      if (error) throw error;
+      var row = (data && data[0]) || null;
+      state.myCouple = row
+        ? { coupleId: row.couple_id, inviteCode: row.invite_code, partnerName: row.partner_name }
+        : null;
     } catch (e) {
-      console.warn("Failed to check couple status", e);
-      state.coupleId = null;
+      console.warn("Failed to load couple status", e);
+      state.myCouple = null;
     }
-    return state.coupleId;
+    return state.myCouple;
   }
 
   async function init() {
@@ -68,38 +78,112 @@
       console.warn("Failed to read Supabase session", e);
       state.session = null;
     }
-    await refreshCoupleStatus();
+    await refreshMyCouple();
     notify();
 
-    client.auth.onAuthStateChange(function (_event, session) {
+    client.auth.onAuthStateChange(function (event, session) {
+      if (event === "PASSWORD_RECOVERY") {
+        state.recoveryMode = true;
+        state.session = session;
+        notify();
+        return;
+      }
       state.session = session;
-      refreshCoupleStatus().then(notify);
+      refreshMyCouple().then(notify);
     });
   }
 
-  async function sendMagicLink(email) {
-    if (!client) throw new Error("Sign-in isn't available right now.");
-    var redirectTo = window.location.origin + window.location.pathname;
-    var { error } = await client.auth.signInWithOtp({
+  // ---- Auth: email + password ----
+
+  async function signUp(email, password, displayName) {
+    if (!client) throw new Error("Sign-up isn't available right now.");
+    var { data, error } = await client.auth.signUp({
       email: email,
-      options: { emailRedirectTo: redirectTo }
+      password: password,
+      options: { data: { display_name: displayName || "" } }
     });
-    if (error) throw new Error(friendlyError(error, "Couldn't send the magic link. Please check the email and try again."));
+    if (error) throw new Error(friendlyError(error, "Couldn't create your account. Please try again."));
+    state.session = data.session || state.session;
+    if (state.session && displayName) {
+      try { await updateDisplayName(displayName); } catch (e) { console.warn("Failed to persist display name after signup", e); }
+    }
+    await refreshMyCouple();
+    notify();
+    return data;
+  }
+
+  async function signIn(email, password) {
+    if (!client) throw new Error("Sign-in isn't available right now.");
+    var { data, error } = await client.auth.signInWithPassword({ email: email, password: password });
+    if (error) throw new Error(friendlyError(error, "Couldn't sign in. Please check your email and password."));
+    state.session = data.session;
+    await refreshMyCouple();
+    notify();
+    return data;
   }
 
   async function signOut() {
     if (!client) return;
     await client.auth.signOut();
     state.session = null;
-    state.coupleId = null;
+    state.myCouple = null;
+    state.recoveryMode = false;
     notify();
   }
+
+  async function resetPassword(email) {
+    if (!client) throw new Error("Password reset isn't available right now.");
+    var { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: currentPageUrl() });
+    if (error) throw new Error(friendlyError(error, "Couldn't send the reset email. Please try again."));
+  }
+
+  async function setNewPassword(newPassword) {
+    if (!client) throw new Error("Not available right now.");
+    var { error } = await client.auth.updateUser({ password: newPassword });
+    if (error) throw new Error(friendlyError(error, "Couldn't update your password. Please try again."));
+    state.recoveryMode = false;
+    notify();
+  }
+
+  function isLoggedIn() { return !!state.session; }
+  function isInCouple() { return !!state.myCouple; }
+  function isLinked() { return !!(state.myCouple && state.myCouple.partnerName); }
+  function isRecoveryMode() { return !!state.recoveryMode; }
+
+  // ---- Profile ----
+
+  async function getProfile() {
+    if (!client || !state.session) return null;
+    try {
+      var { data, error } = await client
+        .from("profiles")
+        .select("display_name")
+        .eq("id", state.session.user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.warn("Failed to load profile", e);
+      return null;
+    }
+  }
+
+  async function updateDisplayName(name) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client
+      .from("profiles")
+      .update({ display_name: name })
+      .eq("id", state.session.user.id);
+    if (error) throw new Error(friendlyError(error, "Couldn't save your name. Please try again."));
+  }
+
+  // ---- Couple linking ----
 
   async function createCouple() {
     if (!client) throw new Error("Sign-in isn't available right now.");
     var { data, error } = await client.rpc("create_couple");
     if (error) throw new Error(friendlyError(error));
-    await refreshCoupleStatus();
+    await refreshMyCouple();
     notify();
     return data;
   }
@@ -108,13 +192,18 @@
     if (!client) throw new Error("Sign-in isn't available right now.");
     var { data, error } = await client.rpc("join_couple", { code: code });
     if (error) throw new Error(friendlyError(error));
-    await refreshCoupleStatus();
+    await refreshMyCouple();
     notify();
     return data;
   }
 
-  function isLoggedIn() { return !!state.session; }
-  function isLinked() { return !!state.coupleId; }
+  async function leaveCouple() {
+    if (!client) throw new Error("Sign-in isn't available right now.");
+    var { error } = await client.rpc("leave_couple");
+    if (error) throw new Error(friendlyError(error));
+    await refreshMyCouple();
+    notify();
+  }
 
   // ---- Generic preferences (reusable for truth/dare/position/roleplay) ----
 
@@ -174,7 +263,7 @@
   }
 
   async function getMutualMatches(itemType) {
-    if (!client || !state.session || !state.coupleId) return [];
+    if (!client || !state.session || !isLinked()) return [];
     try {
       var { data, error } = await client.rpc("get_mutual_matches", { p_type: itemType });
       if (error) throw error;
@@ -190,13 +279,21 @@
     onChange: function (fn) { listeners.push(fn); },
     isAvailable: function () { return !!client; },
     isLoggedIn: isLoggedIn,
+    isInCouple: isInCouple,
     isLinked: isLinked,
+    isRecoveryMode: isRecoveryMode,
     getSession: function () { return state.session; },
-    getCoupleId: function () { return state.coupleId; },
-    sendMagicLink: sendMagicLink,
+    getMyCouple: function () { return state.myCouple; },
+    signUp: signUp,
+    signIn: signIn,
     signOut: signOut,
+    resetPassword: resetPassword,
+    setNewPassword: setNewPassword,
+    getProfile: getProfile,
+    updateDisplayName: updateDisplayName,
     createCouple: createCouple,
     joinCouple: joinCouple,
+    leaveCouple: leaveCouple,
     getLocalRatings: getLocalRatings,
     saveRating: saveRating,
     loadRatings: loadRatings,
