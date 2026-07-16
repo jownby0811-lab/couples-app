@@ -321,6 +321,7 @@
 <div id="menu" class="menu">
   <a onclick="showPage('home')">Home</a>
   <a onclick="showPage('truth')">Truth or Dare</a>
+  <a onclick="showPage('rateDares')">Rate Dares 💌</a>
   <a onclick="showPage('roleplay')">Roleplay</a>
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
@@ -386,7 +387,9 @@
   <button onclick="resetGame()">New Game 🔄</button>
   <div style="margin:6px 0 2px;">
     <button id="drinkModeBtn" onclick="toggleDrinkMode()" class="drink-mode-toggle">Drink Mode 🍺</button>
+    <button id="matchedOnlyBtn" onclick="toggleMatchedOnly()" class="drink-mode-toggle hidden">Matched Only 💕</button>
   </div>
+  <p class="auth-link" onclick="showPage('rateDares')">Rate Dares 💌</p>
 
 <p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:4px;"></p>
 <div id="drinkModeIndicator" class="drink-mode-indicator" style="display:none;">🍺 Drink Mode</div>
@@ -410,6 +413,7 @@
     <!-- FRONT -->
     <div class="card-front">
       <div class="card-label" id="cardLabel">Truth</div>
+      <span id="loveMatchBadge" class="love-match-badge hidden">💕 You both loved this</span>
       <p id="todResult"></p>
     </div>
 
@@ -441,6 +445,52 @@
     </div>
   </div>
 
+</div>
+
+<div id="rateDares" class="section">
+  <h1>Rate Dares</h1>
+  <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate dares privately. Dares you mark "No" won't be drawn for you in Truth or Dare — and dares you both like show up as matches.</p>
+
+  <select id="rateDaresTierSelect" onchange="renderRateDaresList()">
+    <option value="tease">Tease 😏</option>
+    <option value="foreplay">Foreplay 🔥</option>
+    <option value="dirty">Dirty 😈</option>
+  </select>
+
+  <div class="pos-browse-list" style="margin-top:14px;">
+    <div class="pos-browse-row active" data-rate-filter="all" onclick="setRateDaresFilter('all')">
+      <span>All Dares</span><span class="pos-count" id="rateDaresCountAll">0</span>
+    </div>
+    <div class="pos-browse-row" data-rate-filter="unrated" onclick="setRateDaresFilter('unrated')">
+      <span>⬜ Unrated</span><span class="pos-count" id="rateDaresCountUnrated">0</span>
+    </div>
+    <div class="pos-browse-row" data-rate-filter="love" onclick="setRateDaresFilter('love')">
+      <span>💕 Loved</span><span class="pos-count" id="rateDaresCountLove">0</span>
+    </div>
+    <div class="pos-browse-row" data-rate-filter="no" onclick="setRateDaresFilter('no')">
+      <span>🚫 No</span><span class="pos-count" id="rateDaresCountNo">0</span>
+    </div>
+  </div>
+
+  <div id="rateDaresList" class="pos-list"></div>
+
+  <div id="rateDareModal" class="pos-modal hidden">
+    <div class="pos-modal-card">
+      <button class="pos-close-btn" onclick="closeRateDareModal()">✕</button>
+      <div class="pos-modal-name" id="rateDareModalText"></div>
+      <div class="pos-modal-meta" id="rateDareModalTags"></div>
+
+      <div class="pos-rating-box">
+        <span class="pos-tips-label">Your Rating</span>
+        <div class="pos-rating-buttons" id="rateDareRatingButtons">
+          <button data-rating="no" onclick="setDareRating('no')">🚫 No</button>
+          <button data-rating="maybe" onclick="setDareRating('maybe')">🤔 Maybe</button>
+          <button data-rating="yes" onclick="setDareRating('yes')">👍 Yes</button>
+          <button data-rating="love" onclick="setDareRating('love')">💕 Love</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="roleplay" class="section">
