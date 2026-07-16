@@ -1122,13 +1122,92 @@ hr {
 /* These sections must paint above the 3D card stacking context (z-index: 1) */
 #pointSection,
 #passFailSection,
-#skipSection {
+#skipSection,
+#judgeWaitSection {
   position: relative;
   z-index: 2;
 }
 
 #skipSection {
   margin-top: 14px;
+}
+
+/* ========================= */
+/* GAME SYNC — SHARED        */
+/* ========================= */
+
+.conn-indicator {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 4px 14px;
+  border-radius: 12px;
+  margin: 2px 0 10px;
+}
+
+.conn-indicator.hidden {
+  display: none;
+}
+
+.conn-indicator.conn-synced {
+  color: #7ddc97;
+  background: rgba(125, 220, 151, 0.1);
+  border: 1px solid rgba(125, 220, 151, 0.3);
+}
+
+.conn-indicator.conn-solo {
+  color: rgba(255, 245, 247, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.drawn-by-label {
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255, 245, 247, 0.55);
+  text-align: center;
+  margin: 4px 0 2px;
+}
+
+.drawn-by-label.hidden {
+  display: none;
+}
+
+.judge-wait-text {
+  font-size: 14px;
+  color: #c9a97a;
+  text-align: center;
+  margin: 0;
+  animation: judgeWaitPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes judgeWaitPulse {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1; }
+}
+
+@keyframes syncCelebratePulse {
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(201,169,122,0)); }
+  35%  { transform: scale(1.04); filter: drop-shadow(0 0 26px rgba(201,169,122,0.85)); }
+  100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(201,169,122,0)); }
+}
+
+@keyframes syncFailShake {
+  0%, 100% { transform: translateX(0) scale(1); }
+  20%      { transform: translateX(-6px) scale(0.99); }
+  40%      { transform: translateX(6px) scale(0.99); }
+  60%      { transform: translateX(-4px) scale(0.99); }
+  80%      { transform: translateX(4px) scale(0.99); }
+}
+
+.sync-celebrate {
+  animation: syncCelebratePulse 1.4s ease-out;
+}
+
+.sync-fail {
+  animation: syncFailShake 0.5s ease-in-out;
+  filter: grayscale(0.35);
 }
 
 .skip-btn {
@@ -1211,6 +1290,19 @@ hr {
   margin: 6px 0 2px;
   font-weight: 600;
   text-align: center;
+}
+
+.wheel-score-display {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgba(255, 245, 247, 0.78);
+  text-align: center;
+  margin: 0 0 4px;
+}
+
+.wheel-score-display.hidden {
+  display: none;
 }
 
 .wheel-wrapper {
