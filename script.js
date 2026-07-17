@@ -19,6 +19,9 @@ window.showPage = function (pageId) {
     resizeWheelCanvas();
     drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
   }
+  if (pageId === "home" && typeof initHomePage === "function") {
+    initHomePage();
+  }
   if (typeof setGameSyncPage === "function") setGameSyncPage(pageId);
 };
 
@@ -1323,6 +1326,7 @@ function hideBurnOverlay() {
 function triggerCardBurnAway() {
   var cardEl = document.getElementById("todCard");
   if (!cardEl) return;
+  if (typeof markRoundPlayed === "function") markRoundPlayed();
   if (typeof playSfx === "function") playSfx("burn");
 
   if (prefersReducedMotion()) {
@@ -2414,6 +2418,9 @@ window.addEventListener("load", function () {
   updateNameDisplays();
   updateDrinkModeUI();
   if (typeof updateSoundMuteUI === "function") updateSoundMuteUI();
+  if (typeof recordHomeVisit === "function") recordHomeVisit();
+  if (typeof renderHomeHero === "function") renderHomeHero();
+  if (typeof maybeShowInstallNudge === "function") maybeShowInstallNudge();
   if (localStorage.getItem("menuOpened") !== "true") {
     var menuBtn = document.querySelector(".menu-btn");
     if (menuBtn) menuBtn.classList.add("menu-discovery");
@@ -2860,6 +2867,7 @@ function handleGameBackendChange() {
     window.Backend.getProfile().then(function (p) {
       gameSyncMyName = (p && p.display_name) || "You";
       applySyncVisibility();
+      if (typeof renderHomeHero === "function") renderHomeHero();
     });
   } else {
     gameSyncMyName = "You";
@@ -2867,6 +2875,8 @@ function handleGameBackendChange() {
   reconcileGameSyncSubscription();
   if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
   if (typeof refreshAllPreferenceCaches === "function") refreshAllPreferenceCaches();
+  if (typeof renderHomeHero === "function") renderHomeHero();
+  if (typeof renderHomeCurrentGame === "function") renderHomeCurrentGame();
 }
 
 // ---- incoming event dispatch ----
@@ -2959,6 +2969,139 @@ async function rebuildGameStateFromServer() {
   renderCardShop();
   loadMyHand();
 }
+
+// ========================= //
+// HOME PAGE                 //
+// ========================= //
+// State-aware hero, "current game" summary, and the engagement-gated
+// install nudge. Read-only against existing auth/sync data — no new
+// backend calls or schema.
+
+function homeCtaState() {
+  if (window.Backend && window.Backend.isAvailable() && window.Backend.isLoggedIn()) {
+    return window.Backend.isLinked() ? "linked" : "unlinked";
+  }
+  return "loggedOut";
+}
+
+function renderHomeHero() {
+  var titleEl = document.getElementById("homeHeroTitle");
+  var subEl = document.getElementById("homeHeroSub");
+  var ctaEl = document.getElementById("homeHeroCta");
+  if (!titleEl || !subEl || !ctaEl) return;
+
+  var state = homeCtaState();
+
+  if (state === "linked") {
+    titleEl.innerText = "❤️ " + (gameSyncMyName || "You") + " & " + (gameSyncPartnerName || "Partner");
+    subEl.innerText = "Continue your game.";
+    ctaEl.innerText = "Continue Playing ❤️";
+    ctaEl.onclick = function () { showPage("truth"); };
+  } else {
+    titleEl.innerText = "Discover each other. Dare each other.";
+    subEl.innerText = "Every answer is private. Only what you're both into ever becomes playable.";
+    if (state === "unlinked") {
+      ctaEl.innerText = "Connect with your partner";
+      ctaEl.onclick = function () { showPage("account"); };
+    } else {
+      ctaEl.innerText = "Start Playing — Free";
+      ctaEl.onclick = function () {
+        showPage("account");
+        if (typeof setAuthTab === "function") setAuthTab("signup");
+      };
+    }
+  }
+}
+
+function renderHomeCurrentGame() {
+  var block = document.getElementById("homeCurrentGame");
+  if (!block) return;
+  if (!(window.GameSync && window.GameSync.isActive())) {
+    block.classList.add("hidden");
+    return;
+  }
+  window.GameSync.fetchRecent(200).then(function (events) {
+    var scores = computeScoresFromEvents(events);
+    if (scores.mine <= 0 && scores.partner <= 0) {
+      block.classList.add("hidden");
+      return;
+    }
+    var mineLabel = document.getElementById("homeScoreMineLabel");
+    var partnerLabel = document.getElementById("homeScorePartnerLabel");
+    if (mineLabel) mineLabel.innerText = gameSyncMyName || "You";
+    if (partnerLabel) partnerLabel.innerText = gameSyncPartnerName || "Partner";
+    document.getElementById("homeScoreMine").innerText = scores.mine;
+    document.getElementById("homeScorePartner").innerText = scores.partner;
+    block.classList.remove("hidden");
+  }).catch(function () {
+    block.classList.add("hidden");
+  });
+}
+
+function initHomePage() {
+  renderHomeHero();
+  renderHomeCurrentGame();
+  maybeShowInstallNudge();
+}
+
+// ---- Install nudge ----
+// Shown only after real engagement (a completed round, or the 3rd+
+// visit) — never on first load — and never inside an installed PWA.
+
+function isStandaloneDisplay() {
+  return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent || "");
+}
+
+function recordHomeVisit() {
+  try {
+    var n = (parseInt(localStorage.getItem("homeVisitCount"), 10) || 0) + 1;
+    localStorage.setItem("homeVisitCount", String(n));
+    return n;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function markRoundPlayed() {
+  try { localStorage.setItem("hasCompletedRound", "true"); } catch (e) { /* ignore */ }
+  maybeShowInstallNudge();
+}
+
+function maybeShowInstallNudge() {
+  var el = document.getElementById("installNudge");
+  if (!el) return;
+  if (isStandaloneDisplay()) { el.classList.add("hidden"); return; }
+  var dismissed = false;
+  try { dismissed = localStorage.getItem("installNudgeDismissed") === "true"; } catch (e) { /* ignore */ }
+  if (dismissed) { el.classList.add("hidden"); return; }
+
+  var played = false;
+  var visits = 0;
+  try {
+    played = localStorage.getItem("hasCompletedRound") === "true";
+    visits = parseInt(localStorage.getItem("homeVisitCount"), 10) || 0;
+  } catch (e) { /* ignore */ }
+  if (!played && visits < 3) { el.classList.add("hidden"); return; }
+
+  var textEl = document.getElementById("installNudgeText");
+  if (textEl) {
+    textEl.innerText = isIosDevice()
+      ? "Add Dare We? to your Home Screen — tap Share, then \"Add to Home Screen\"."
+      : "Add Dare We? to your Home Screen for quicker access, from your browser menu.";
+  }
+  el.classList.remove("hidden");
+}
+
+window.dismissInstallNudge = function () {
+  try { localStorage.setItem("installNudgeDismissed", "true"); } catch (e) { /* ignore */ }
+  var el = document.getElementById("installNudge");
+  if (el) el.classList.add("hidden");
+};
 
 // ========================= //
 // POWER CARDS                //
@@ -4153,6 +4296,7 @@ window.startWheelTimer = function () {
 };
 
 window.wheelNextTurn = function () {
+  if (typeof markRoundPlayed === "function") markRoundPlayed();
   if (isSyncActive()) {
     resetWheelSyncUI();
     document.getElementById('wheelResultArea').style.display = 'none';
