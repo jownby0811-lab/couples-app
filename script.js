@@ -858,14 +858,246 @@ function animateCardText(randomText) {
   text.classList.add("fade-in");
 }
 
+// ========================= //
+// GL HELPERS (shared)       //
+// ========================= //
+// Shared by both the draw-time reveal and the resolution burn-away — a
+// trivial fullscreen-quad vertex shader and generic WebGL program
+// setup. Each effect keeps its own probed/failed/canvas state so a
+// failure in one doesn't retroactively disable the other.
+
+function compileShader(gl, type, src) {
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    var log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error("Shader compile failed: " + log);
+  }
+  return s;
+}
+
+function compileGLProgram(canvasId, vertSrc, fragSrc) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) throw new Error(canvasId + " element missing");
+  var gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: false }) ||
+    canvas.getContext("experimental-webgl", { alpha: true, premultipliedAlpha: true, antialias: false });
+  if (!gl) throw new Error("WebGL context unavailable");
+  var vs = compileShader(gl, gl.VERTEX_SHADER, vertSrc);
+  var fs = compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+  var program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error("Program link failed: " + gl.getProgramInfoLog(program));
+  }
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  var positionLoc = gl.getAttribLocation(program, "a_position");
+  return {
+    gl: gl, canvas: canvas, program: program, buffer: buffer,
+    positionLoc: positionLoc,
+    timeLoc: gl.getUniformLocation(program, "u_time"),
+    resLoc: gl.getUniformLocation(program, "u_resolution")
+  };
+}
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+var GL_VERT_SRC = [
+  "attribute vec2 a_position;",
+  "varying vec2 v_uv;",
+  "void main() {",
+  "  v_uv = a_position * 0.5 + 0.5;",
+  "  gl_Position = vec4(a_position, 0.0, 1.0);",
+  "}"
+].join("\n");
+
+// ========================= //
+// CARD DRAW REVEAL (WebGL)  //
+// ========================= //
+// Fires once per card draw (solo or synced — same event either way).
+// The card shows an opaque dark face; a hole ignites at the center and
+// spreads radially outward with a noise-driven organic edge, a
+// rose-gold ember ring, and fine sparks, consuming the face to reveal
+// the already-rendered card text/art beneath. ~1.3s. Same three-tier
+// degradation as the resolution burn-away (WebGL -> CSS clip-path
+// dissolve -> quick fade under reduced motion). Unlike the resolution
+// effect, the overlay hides itself once fully open — there's no
+// "frozen" state worth keeping since the real card is already showing.
+
+var revealGL = null;
+var revealGLProbed = false;
+var revealGLFailed = false;
+var revealAnimFrame = null;
+
+var REVEAL_FRAG_SRC = [
+  "precision mediump float;",
+  "varying vec2 v_uv;",
+  "uniform float u_time;",
+  "uniform vec2 u_resolution;",
+  "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }",
+  "float noise(vec2 p) {",
+  "  vec2 i = floor(p); vec2 f = fract(p);",
+  "  float a = hash(i); float b = hash(i + vec2(1.0, 0.0));",
+  "  float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));",
+  "  vec2 u = f * f * (3.0 - 2.0 * f);",
+  "  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;",
+  "}",
+  "float fbm(vec2 p) {",
+  "  float v = 0.0; float amp = 0.55;",
+  "  for (int i = 0; i < 4; i++) { v += amp * noise(p); p *= 2.05; amp *= 0.5; }",
+  "  return v;",
+  "}",
+  "void main() {",
+  "  vec2 uv = v_uv;",
+  "  vec2 aspect = vec2(u_resolution.x / max(u_resolution.y, 1.0), 1.0);",
+  "  vec2 centered = (uv - 0.5) * aspect;",
+  "  float dist = length(centered);",
+  "  float n = fbm(uv * aspect * 5.5 + vec2(u_time * 0.5, -u_time * 0.5));",
+  "  float noiseOffset = (n - 0.5) * 0.4;",
+  "  float front = dist - noiseOffset;",
+  "  float p = max(0.0, u_time * 1.35 - 0.05);",
+  "  float opened = step(front, p);",
+  "  float edge = smoothstep(p - 0.08, p, front) * (1.0 - smoothstep(p, p + 0.08, front)) * (1.0 - opened);",
+  "  float sparkNoise = noise(uv * aspect * 42.0 + u_time * 32.0);",
+  "  float spark = edge * step(0.87, sparkNoise) * 1.5;",
+  "  vec3 emberColor = vec3(0.79, 0.66, 0.48);",
+  "  vec3 hotColor = vec3(1.0, 0.87, 0.65);",
+  "  vec3 faceColor = vec3(0.028, 0.035, 0.05);",
+  "  vec3 emberGlow = mix(emberColor, hotColor, clamp(spark, 0.0, 1.0)) * (edge * 1.6 + spark);",
+  "  float faceAlpha = (1.0 - opened) * (1.0 - edge) * 0.97;",
+  "  float alpha = clamp(faceAlpha + edge * 0.95 + spark * 0.3, 0.0, 1.0);",
+  "  vec3 color = mix(faceColor, emberGlow, clamp(edge * 2.2 + spark, 0.0, 1.0));",
+  "  gl_FragColor = vec4(color, alpha);",
+  "}"
+].join("\n");
+
+function setupRevealGL() {
+  if (revealGLProbed) return revealGL;
+  revealGLProbed = true;
+  try {
+    revealGL = compileGLProgram("revealCanvas", GL_VERT_SRC, REVEAL_FRAG_SRC);
+  } catch (e) {
+    console.warn("WebGL reveal effect unavailable, using CSS fallback", e);
+    revealGL = null;
+    revealGLFailed = true;
+  }
+  return revealGL;
+}
+
+function runRevealCSSFallback(quick) {
+  var el = document.getElementById("revealFallback");
+  if (!el) return;
+  el.classList.remove("hidden", "reveal-fallback-quick", "reveal-fallback-play");
+  void el.offsetWidth;
+  el.classList.add(quick ? "reveal-fallback-quick" : "reveal-fallback-play");
+}
+
+function hideRevealOverlay() {
+  if (revealAnimFrame) { cancelAnimationFrame(revealAnimFrame); revealAnimFrame = null; }
+  var canvas = document.getElementById("revealCanvas");
+  if (canvas) canvas.classList.add("hidden");
+  var fallback = document.getElementById("revealFallback");
+  if (fallback) {
+    fallback.classList.add("hidden");
+    fallback.classList.remove("reveal-fallback-quick", "reveal-fallback-play");
+  }
+}
+
 function triggerBurnReveal(card) {
-  card.classList.remove("burn-reveal", "card-reveal-anim");
-  void card.offsetWidth;
-  card.classList.add("burn-reveal", "card-reveal-anim");
-  setTimeout(() => { card.classList.remove("burn-reveal", "card-reveal-anim"); }, 1900);
+  hideRevealOverlay();
   if (typeof playSfx === "function") {
     playSfx("draw");
-    setTimeout(function () { playSfx("reveal"); }, 1550);
+    setTimeout(function () { playSfx("reveal"); }, 350);
+  }
+
+  if (prefersReducedMotion()) {
+    runRevealCSSFallback(true);
+    return;
+  }
+
+  var ctx = setupRevealGL();
+  if (!ctx || revealGLFailed) {
+    runRevealCSSFallback(false);
+    return;
+  }
+
+  try {
+    var canvas = ctx.canvas;
+    var rect = card.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.round(rect.width * dpr));
+    var h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    canvas.classList.remove("hidden");
+
+    var gl = ctx.gl;
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(ctx.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ctx.buffer);
+    gl.enableVertexAttribArray(ctx.positionLoc);
+    gl.vertexAttribPointer(ctx.positionLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform2f(ctx.resLoc, w, h);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    var duration = 1300;
+    var start = null;
+    var lastTs = null;
+    var slowFrames = 0;
+    if (revealAnimFrame) cancelAnimationFrame(revealAnimFrame);
+
+    function frame(ts) {
+      if (start === null) { start = ts; lastTs = ts; }
+      var delta = ts - lastTs;
+      lastTs = ts;
+      if (delta > 120) {
+        slowFrames++;
+        if (slowFrames >= 3) {
+          console.warn("WebGL reveal effect struggling on this device, switching to CSS fallback");
+          revealGLFailed = true;
+          canvas.classList.add("hidden");
+          revealAnimFrame = null;
+          runRevealCSSFallback(false);
+          return;
+        }
+      }
+      var t = Math.min(1, (ts - start) / duration);
+      try {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform1f(ctx.timeLoc, t);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      } catch (e) {
+        console.warn("WebGL reveal render failed mid-animation, switching to CSS fallback", e);
+        revealGLFailed = true;
+        canvas.classList.add("hidden");
+        revealAnimFrame = null;
+        runRevealCSSFallback(false);
+        return;
+      }
+      if (t < 1) {
+        revealAnimFrame = requestAnimationFrame(frame);
+      } else {
+        revealAnimFrame = null;
+        // Fully open — nothing left to show. Unlike the resolution burn
+        // there's no frozen state worth keeping, so hide the canvas.
+        canvas.classList.add("hidden");
+      }
+    }
+    revealAnimFrame = requestAnimationFrame(frame);
+  } catch (e) {
+    console.warn("WebGL reveal effect failed, using CSS fallback", e);
+    revealGLFailed = true;
+    var canvasEl = document.getElementById("revealCanvas");
+    if (canvasEl) canvasEl.classList.add("hidden");
+    runRevealCSSFallback(false);
   }
 }
 
@@ -891,15 +1123,6 @@ var burnGL = null;
 var burnGLProbed = false;
 var burnGLFailed = false;
 var burnAnimFrame = null;
-
-var BURN_VERT_SRC = [
-  "attribute vec2 a_position;",
-  "varying vec2 v_uv;",
-  "void main() {",
-  "  v_uv = a_position * 0.5 + 0.5;",
-  "  gl_Position = vec4(a_position, 0.0, 1.0);",
-  "}"
-].join("\n");
 
 var BURN_FRAG_SRC = [
   "precision mediump float;",
@@ -956,40 +1179,13 @@ function setupBurnGL() {
   if (burnGLProbed) return burnGL;
   burnGLProbed = true;
   try {
-    var canvas = document.getElementById("burnCanvas");
-    if (!canvas) throw new Error("burnCanvas element missing");
-    var gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: false }) ||
-      canvas.getContext("experimental-webgl", { alpha: true, premultipliedAlpha: true, antialias: false });
-    if (!gl) throw new Error("WebGL context unavailable");
-    var vs = compileBurnShader(gl, gl.VERTEX_SHADER, BURN_VERT_SRC);
-    var fs = compileBurnShader(gl, gl.FRAGMENT_SHADER, BURN_FRAG_SRC);
-    var program = gl.createProgram();
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error("Program link failed: " + gl.getProgramInfoLog(program));
-    }
-    var buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    var positionLoc = gl.getAttribLocation(program, "a_position");
-    burnGL = {
-      gl: gl, canvas: canvas, program: program, buffer: buffer,
-      positionLoc: positionLoc,
-      timeLoc: gl.getUniformLocation(program, "u_time"),
-      resLoc: gl.getUniformLocation(program, "u_resolution")
-    };
+    burnGL = compileGLProgram("burnCanvas", GL_VERT_SRC, BURN_FRAG_SRC);
   } catch (e) {
     console.warn("WebGL burn effect unavailable, using CSS fallback", e);
     burnGL = null;
     burnGLFailed = true;
   }
   return burnGL;
-}
-
-function prefersReducedMotion() {
-  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 }
 
 function runBurnCSSFallback(quick) {
@@ -1536,9 +1732,9 @@ function renderSyncedCard(mode, tier, card, cardIndex, drawnByPartner) {
   var loveBadge = document.getElementById("loveMatchBadge");
   if (loveBadge) loveBadge.classList.toggle("hidden", !isLoveMatch);
   if (isLoveMatch && typeof playSfx === "function") {
-    // Timed to land alongside the shimmer sweep, once the burn-reveal
-    // has cleared and the badge is actually visible.
-    setTimeout(function () { playSfx("sparkle"); }, 1600);
+    // Timed to land once the burn-reveal has fully opened and the
+    // badge is actually visible.
+    setTimeout(function () { playSfx("sparkle"); }, 1350);
   }
 }
 
