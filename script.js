@@ -799,8 +799,18 @@ window.toggleMenu = function () {
     menu.style.left = "-260px";
   } else {
     menu.style.left = "0px";
+    markMenuDiscovered();
   }
 };
+
+// First-run discovery cue on the hamburger icon — permanently cleared
+// the first time the user opens the menu.
+function markMenuDiscovered() {
+  if (localStorage.getItem("menuOpened") === "true") return;
+  localStorage.setItem("menuOpened", "true");
+  var btn = document.querySelector(".menu-btn");
+  if (btn) btn.classList.remove("menu-discovery");
+}
 
 function showPage(pageId) {
   let sections = document.getElementsByClassName("section");
@@ -1635,6 +1645,10 @@ window.addEventListener("load", function () {
   updateScoreDisplay();
   updateNameDisplays();
   updateDrinkModeUI();
+  if (localStorage.getItem("menuOpened") !== "true") {
+    var menuBtn = document.querySelector(".menu-btn");
+    if (menuBtn) menuBtn.classList.add("menu-discovery");
+  }
   if (localStorage.getItem("player1Name") && localStorage.getItem("player2Name")) {
     document.getElementById("onboarding").classList.add("hidden");
   }
