@@ -448,6 +448,8 @@ hr {
 .reveal-fallback {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 12;
   pointer-events: none;
   border-radius: 20px;
@@ -491,7 +493,7 @@ hr {
 }
 
 .reveal-fallback-play {
-  animation: revealFallbackDissolve 1.3s ease-out forwards;
+  animation: revealFallbackDissolve 1.45s ease-out forwards;
 }
 
 @keyframes revealFallbackQuick {
@@ -516,6 +518,8 @@ hr {
 .burn-fallback {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 20;
   pointer-events: none;
   border-radius: 20px;

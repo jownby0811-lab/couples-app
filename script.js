@@ -1047,7 +1047,7 @@ function triggerBurnReveal(card) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    var duration = 1300;
+    var duration = 1450;
     var start = null;
     var lastTs = null;
     var slowFrames = 0;
