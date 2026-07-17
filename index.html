@@ -316,6 +316,7 @@
 
   <div class="topbar">
   <span class="menu-btn" onclick="toggleMenu()">☰</span>
+  <span class="card-menu-btn hidden" id="cardMenuBtn" onclick="toggleCardMenu()">🃏</span>
 </div>
 
 <div id="menu" class="menu">
@@ -328,6 +329,32 @@
   <a onclick="updateNames()">Update Names&nbsp;✏️</a>
   <a onclick="showPage('account')" id="menuAuthLink">Account&nbsp;👤</a>
   <a href="feedback.html">Beta Feedback&nbsp;💬</a>
+</div>
+
+<div id="cardMenu" class="card-menu">
+  <div class="card-menu-header">
+    <h2 class="card-menu-title">Power Cards</h2>
+    <div class="card-menu-balance">💰 <span id="cardShopBalance">0 pts</span></div>
+  </div>
+  <div id="cardShopList" class="card-shop-list"></div>
+  <div class="card-shop-hand-section">
+    <div class="pos-filter-label">Your Hand</div>
+    <div id="cardShopHand" class="card-shop-hand"></div>
+  </div>
+</div>
+
+<div id="cardAnnouncement" class="card-announcement hidden">
+  <span id="cardAnnouncementText"></span>
+</div>
+
+<div id="wildcardModal" class="pos-modal hidden">
+  <div class="pos-modal-card">
+    <button class="pos-close-btn" onclick="closeWildcardPicker()">✕</button>
+    <div class="pos-modal-name">Choose Your Wildcard</div>
+    <p class="pos-modal-desc">Hand-pick any dare from your matched deck.</p>
+    <p id="wildcardEmpty" class="hidden" style="color:rgba(255,245,247,0.5);text-align:center;padding:20px 0;">No mutual matches yet — rate some dares together in Personalize first.</p>
+    <div id="wildcardList" class="pos-list"></div>
+  </div>
 </div>
 
 <div id="coupleChoiceModal" class="auth-modal hidden">
@@ -467,6 +494,8 @@
   <button id="skipBtn" onclick="skipCard()" class="skip-btn">Skip 💸</button>
   <button id="drinkBtn" onclick="drinkSkip()" class="drink-btn" style="display:none;">Drink 🍺</button>
 </div>
+
+<div id="handTray" class="hand-tray hidden"></div>
 
 <div id="judgeWaitSection" style="display:none; text-align:center; margin-top:15px;">
   <p id="judgeWaitText" class="judge-wait-text"></p>

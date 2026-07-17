@@ -60,8 +60,24 @@
       if (error) throw error;
       var row = (data && data[0]) || null;
       state.myCouple = row
-        ? { coupleId: row.couple_id, inviteCode: row.invite_code, partnerName: row.partner_name }
+        ? { coupleId: row.couple_id, inviteCode: row.invite_code, partnerName: row.partner_name, partnerId: null }
         : null;
+      // couple_members RLS lets a member read both rows for their own
+      // couple_id — this is the only way to learn the partner's user id,
+      // needed for role-swapping card effects (e.g. Reverse).
+      if (state.myCouple) {
+        try {
+          var membersRes = await client
+            .from("couple_members")
+            .select("user_id")
+            .eq("couple_id", state.myCouple.coupleId);
+          if (membersRes.error) throw membersRes.error;
+          var other = (membersRes.data || []).find(function (m) { return m.user_id !== state.session.user.id; });
+          state.myCouple.partnerId = other ? other.user_id : null;
+        } catch (e2) {
+          console.warn("Failed to load partner id", e2);
+        }
+      }
     } catch (e) {
       console.warn("Failed to load couple status", e);
       state.myCouple = null;
@@ -387,6 +403,42 @@
     }
   }
 
+  // ---- Power Cards (Truth or Dare) ----
+  // A player's hand is a private table (RLS: user_id = auth.uid()), never
+  // readable by their partner. buy_card/play_card are atomic RPCs — the
+  // server logs the game event and mutates the hand in one transaction.
+
+  async function loadHand() {
+    if (!client || !state.session) return {};
+    try {
+      var { data, error } = await client
+        .from("player_cards")
+        .select("card_type, quantity")
+        .eq("user_id", state.session.user.id);
+      if (error) throw error;
+      var hand = {};
+      (data || []).forEach(function (row) {
+        if (row.quantity > 0) hand[row.card_type] = row.quantity;
+      });
+      return hand;
+    } catch (e) {
+      console.warn("Failed to load hand", e);
+      return {};
+    }
+  }
+
+  async function buyCard(cardType, cost) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client.rpc("buy_card", { p_card: cardType, p_cost: cost });
+    if (error) throw new Error(friendlyError(error, "Couldn't buy that card. Please try again."));
+  }
+
+  async function playCard(cardType, payload) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client.rpc("play_card", { p_card: cardType, p_payload: payload || {} });
+    if (error) throw new Error(friendlyError(error, "Couldn't play that card. Please try again."));
+  }
+
   window.Backend = {
     init: init,
     onChange: function (fn) { listeners.push(fn); },
@@ -410,7 +462,10 @@
     getLocalRatings: getLocalRatings,
     saveRating: saveRating,
     loadRatings: loadRatings,
-    getMutualMatches: getMutualMatches
+    getMutualMatches: getMutualMatches,
+    loadHand: loadHand,
+    buyCard: buyCard,
+    playCard: playCard
   };
 
   window.GameSync = {
@@ -419,6 +474,7 @@
     onConnectionChange: function (fn) { connectionListeners.push(fn); },
     getMyUserId: function () { return state.session ? state.session.user.id : null; },
     getPartnerName: function () { return state.myCouple ? state.myCouple.partnerName : null; },
+    getPartnerId: function () { return state.myCouple ? state.myCouple.partnerId : null; },
     subscribe: subscribeGameEvents,
     send: sendGameEvent,
     fetchRecent: fetchRecentGameEvents
