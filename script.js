@@ -1175,6 +1175,7 @@ function endSyncTruthRound() {
   if (judgeWaitSection) judgeWaitSection.style.display = "none";
   if (skipSection) skipSection.style.display = "none";
   if (label) label.classList.add("hidden");
+  if (typeof renderHandTray === "function") renderHandTray();
 }
 
 function syncDrawCard(mode) {
@@ -1197,27 +1198,45 @@ function syncDrawCard(mode) {
   var performerId = gameSyncMyId();
 
   currentTier = tier;
-  syncTruthRound = { roundId: roundId, tier: tier, mode: mode, cardIndex: cardIndex, performerId: performerId, myRole: "performer" };
+  syncTruthRound = { roundId: roundId, tier: tier, mode: mode, cardIndex: cardIndex, performerId: performerId, myRole: "performer", doubleDown: false };
   renderSyncedCard(mode, tier, randomCard, cardIndex, false);
   showTruthOrDareJudgeUI(mode, "performer");
+  if (typeof renderHandTray === "function") renderHandTray();
 
   window.GameSync.send("card_drawn", {
     roundId: roundId, mode: mode, tier: tier, cardIndex: cardIndex, performer_user_id: performerId
   });
 }
 
-function restoreTruthOrDareRound(starterEvent) {
+function restoreTruthOrDareRound(starterEvent, events) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   var p = starterEvent.payload || {};
   var list = gameData[p.tier] && gameData[p.tier][p.mode === "truth" ? "truths" : "dares"];
   var card = list && list[p.cardIndex];
   if (!card) { endSyncTruthRound(); return; }
   var myId = gameSyncMyId();
-  var myRole = p.performer_user_id === myId ? "performer" : "judge";
+  var performerId = p.performer_user_id;
+  var doubleDown = false;
+
+  // On a fresh reconnect/reload, replay any card_played events already
+  // logged against this round (double_down / reverse) so the restored
+  // state matches what was on-screen before the disconnect.
+  if (events) {
+    events.forEach(function (ev) {
+      if (ev.event_type !== "card_played") return;
+      var cp = ev.payload || {};
+      if (cp.roundId !== p.roundId) return;
+      if (cp.card === "double_down") doubleDown = true;
+      if (cp.card === "reverse" && cp.newPerformerId) performerId = cp.newPerformerId;
+    });
+  }
+
+  var myRole = performerId === myId ? "performer" : "judge";
   currentTier = p.tier;
-  syncTruthRound = { roundId: p.roundId, tier: p.tier, mode: p.mode, cardIndex: p.cardIndex, performerId: p.performer_user_id, myRole: myRole };
+  syncTruthRound = { roundId: p.roundId, tier: p.tier, mode: p.mode, cardIndex: p.cardIndex, performerId: performerId, myRole: myRole, doubleDown: doubleDown };
   renderSyncedCard(p.mode, p.tier, card, p.cardIndex, myRole === "judge");
   showTruthOrDareJudgeUI(p.mode, myRole);
+  if (typeof renderHandTray === "function") renderHandTray();
 }
 
 function applyRemoteCardDrawn(ev) {
@@ -1274,8 +1293,9 @@ function applyRemoteCardSkipped(ev) {
 function syncAwardPoints(amount) {
   if (!syncTruthRound || syncTruthRound.myRole !== "judge" || syncTruthRound.mode !== "dare") return;
   var round = syncTruthRound;
+  if (round.doubleDown) amount = amount * 2;
   applySyncScoreDelta(round.performerId, amount);
-  showStatus((gameSyncPartnerName || "Partner") + " +" + amount + " 🔥");
+  showStatus((gameSyncPartnerName || "Partner") + " +" + amount + (round.doubleDown ? " 🔥 (Double Down!)" : " 🔥"));
   showSyncOutcome("todCard", amount > 0);
   endSyncTruthRound();
   showInGameRatingStrip("dare", round.tier, round.cardIndex);
@@ -1288,8 +1308,9 @@ function syncJudgeTruth(verdict) {
   if (!syncTruthRound || syncTruthRound.myRole !== "judge" || syncTruthRound.mode !== "truth") return;
   var round = syncTruthRound;
   var points = verdict === "pass" ? (truthPoints[round.tier] || 0) : 0;
+  if (round.doubleDown) points = points * 2;
   if (points > 0) applySyncScoreDelta(round.performerId, points);
-  showStatus(verdict === "pass" ? ((gameSyncPartnerName || "Partner") + " +" + points + " 🔥") : "No points awarded 😅");
+  showStatus(verdict === "pass" ? ((gameSyncPartnerName || "Partner") + " +" + points + (round.doubleDown ? " 🔥 (Double Down!)" : " 🔥")) : "No points awarded 😅");
   showSyncOutcome("todCard", verdict === "pass");
   endSyncTruthRound();
   showInGameRatingStrip("truth", round.tier, round.cardIndex);
@@ -2035,6 +2056,10 @@ function resetSyncRoundsUI() {
   endSyncTruthRound();
   resetWheelSyncUI();
   syncScores = { mine: 0, partner: 0 };
+  cardBalance = { mine: 0, partner: 0 };
+  myHand = {};
+  if (typeof renderCardShop === "function") renderCardShop();
+  if (typeof renderHandTray === "function") renderHandTray();
 }
 
 function updateConnIndicators() {
@@ -2073,6 +2098,7 @@ function applySyncVisibility() {
   else if (wheelTurnEl) updateWheelTurnDisplay();
   updateScoreDisplay();
   updateWheelScoreDisplay();
+  if (typeof updateCardMenuVisibility === "function") updateCardMenuVisibility();
 }
 
 function updateWheelScoreDisplay() {
@@ -2108,6 +2134,8 @@ function handleGameEvent(ev) {
     case "points_awarded": applyRemotePointsAwarded(ev); break;
     case "truth_judged": applyRemoteTruthJudged(ev); break;
     case "wheel_spun": applyRemoteWheelSpun(ev); break;
+    case "points_spent": applyRemotePointsSpent(ev); break;
+    case "card_played": applyRemoteCardPlayed(ev); break;
   }
 }
 
@@ -2132,17 +2160,26 @@ function computeScoresFromEvents(events) {
   return { mine: mine, partner: partner };
 }
 
+var ROUND_STARTER_CARDS = { redraw: true, spice: true, wildcard: true };
+
 function findPendingRound(events, kind) {
   var resolvedRoundIds = {};
   events.forEach(function (ev) {
     if (ev.event_type === "card_skipped" || ev.event_type === "truth_judged" || ev.event_type === "points_awarded") {
       var rid = (ev.payload || {}).roundId;
       if (rid) resolvedRoundIds[rid] = true;
+    } else if (ev.event_type === "card_played" && (ev.payload || {}).card === "shield") {
+      var rid2 = (ev.payload || {}).roundId;
+      if (rid2) resolvedRoundIds[rid2] = true;
     }
   });
   for (var i = events.length - 1; i >= 0; i--) {
     var ev = events[i];
-    if (kind === "truth_or_dare" && ev.event_type === "card_drawn") {
+    // redraw/spice/wildcard replace a draw — their card_played events carry
+    // the same starter shape as card_drawn and supersede the discarded round.
+    var isTruthOrDareStarter = ev.event_type === "card_drawn" ||
+      (ev.event_type === "card_played" && ROUND_STARTER_CARDS[(ev.payload || {}).card]);
+    if (kind === "truth_or_dare" && isTruthOrDareStarter) {
       return resolvedRoundIds[(ev.payload || {}).roundId] ? null : ev;
     }
     if (kind === "wheel" && ev.event_type === "wheel_spun") {
@@ -2164,12 +2201,396 @@ async function rebuildGameStateFromServer() {
   updateWheelScoreDisplay();
 
   var truthStarter = findPendingRound(events, "truth_or_dare");
-  if (truthStarter) restoreTruthOrDareRound(truthStarter);
+  if (truthStarter) restoreTruthOrDareRound(truthStarter, events);
   else endSyncTruthRound();
 
   var wheelStarter = findPendingRound(events, "wheel");
   if (wheelStarter) restoreWheelRound(wheelStarter);
   else resetWheelSyncUI();
+
+  var balances = computeCardBalanceFromEvents(events);
+  cardBalance.mine = balances.mine;
+  cardBalance.partner = balances.partner;
+  renderCardShop();
+  loadMyHand();
+}
+
+// ========================= //
+// POWER CARDS                //
+// ========================= //
+// A player's hand (player_cards) is RLS-locked to user_id = auth.uid() —
+// the server itself refuses to return a row that isn't yours, so a
+// partner's hand is structurally unreadable, not just hidden by the UI.
+// buy_card/play_card are atomic RPCs: buying logs an anonymous
+// 'points_spent' game event (amount only, never the card) and grows the
+// buyer's hand; playing shrinks the hand and broadcasts 'card_played'
+// with the card type so both devices can apply the effect identically.
+
+var POWER_CARDS = {
+  reverse:     { name: "Reverse",     cost: 30, effect: "Bounces the card back — performer and judge swap for this round." },
+  double_down: { name: "Double Down", cost: 20, effect: "Play before performing to double this round's awarded points." },
+  shield:      { name: "Shield",      cost: 25, effect: "Skip the current card — no penalty, no drink." },
+  redraw:      { name: "Redraw",      cost: 15, effect: "Discard the current card and draw a fresh one." },
+  spice:       { name: "Spice",       cost: 35, effect: "Upgrade the current dare one tier." },
+  wildcard:    { name: "Wildcard",    cost: 50, effect: "Skip the draw — hand-pick any dare from your matched deck." }
+};
+var POWER_CARD_ORDER = ["reverse", "double_down", "shield", "redraw", "spice", "wildcard"];
+var HAND_LIMIT = 3;
+
+var myHand = {};                       // card_type -> quantity (only my own cards)
+var cardBalance = { mine: 0, partner: 0 };
+var cardMenuOpen = false;
+var wildcardActive = false;            // true while the Wildcard picker modal is open
+
+function handCount() {
+  return Object.keys(myHand).reduce(function (sum, k) { return sum + (myHand[k] || 0); }, 0);
+}
+
+// Mirrors computeScoresFromEvents but tracks a separate spendable
+// currency: everything a player has earned minus everything they've
+// spent on cards. The visible scoreboard (syncScores) is untouched by
+// card purchases — this is a distinct derived economy.
+function computeCardBalanceFromEvents(events) {
+  var myId = gameSyncMyId();
+  var totals = {};
+  function add(uid, amount) {
+    if (!uid || !amount) return;
+    totals[uid] = (totals[uid] || 0) + amount;
+  }
+  events.forEach(function (ev) {
+    var p = ev.payload || {};
+    if (ev.event_type === "points_awarded") add(p.performer_user_id, p.amount || 0);
+    else if (ev.event_type === "truth_judged") add(p.performer_user_id, p.points || 0);
+    else if (ev.event_type === "points_spent") add(ev.user_id, -(p.amount || 0));
+  });
+  var mine = Math.max(0, totals[myId] || 0);
+  var partner = 0;
+  Object.keys(totals).forEach(function (uid) { if (uid !== myId) partner = Math.max(0, totals[uid] || 0); });
+  return { mine: mine, partner: partner };
+}
+
+async function loadMyHand() {
+  if (!isSyncActive() || !window.Backend) { myHand = {}; renderCardShop(); renderHandTray(); return; }
+  myHand = await window.Backend.loadHand();
+  renderCardShop();
+  renderHandTray();
+}
+
+function applyRemotePointsSpent(ev) {
+  var amount = (ev.payload || {}).amount || 0;
+  cardBalance.partner = Math.max(0, cardBalance.partner - amount);
+  renderCardShop();
+  showStatus((gameSyncPartnerName || "Partner") + " spent points on a card 🃏");
+}
+
+// ---- playing cards ----
+// Whoever plays a card decides its concrete outcome client-side (which
+// new card, which role swap) and sends it in the play_card payload, the
+// same pattern card_drawn already uses — both devices end up rendering
+// the identical result with no independent randomness to reconcile.
+
+var TIER_ORDER = ["tease", "foreplay", "dirty"];
+
+function buildReversePayload() {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
+  var partnerId = window.GameSync && window.GameSync.getPartnerId ? window.GameSync.getPartnerId() : null;
+  if (!partnerId) return null;
+  return { roundId: syncTruthRound.roundId, newPerformerId: partnerId };
+}
+
+function buildDoubleDownPayload() {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer" || syncTruthRound.doubleDown) return null;
+  return { roundId: syncTruthRound.roundId };
+}
+
+function buildShieldPayload() {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
+  return { roundId: syncTruthRound.roundId };
+}
+
+function buildRedrawPayload() {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
+  var mode = syncTruthRound.mode, tier = syncTruthRound.tier;
+  var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
+  var list = applyPreferenceFilter(getFilteredList(fullList), tier, fullList, mode);
+  if (list.length === 0) { showStatus("No fresh cards available to redraw 😅"); return null; }
+  var randomCard = list[Math.floor(Math.random() * list.length)];
+  var cardIndex = fullList.indexOf(randomCard);
+  return { roundId: genRoundId(), mode: mode, tier: tier, cardIndex: cardIndex, performer_user_id: syncTruthRound.performerId };
+}
+
+function buildSpicePayload() {
+  if (!syncTruthRound || syncTruthRound.myRole !== "performer" || syncTruthRound.mode !== "dare") return null;
+  var curIdx = TIER_ORDER.indexOf(syncTruthRound.tier);
+  var newTier = (curIdx >= 0 && curIdx < TIER_ORDER.length - 1) ? TIER_ORDER[curIdx + 1] : TIER_ORDER[TIER_ORDER.length - 1];
+  var fullList = gameData[newTier].dares;
+  var list = applyPreferenceFilter(getFilteredList(fullList), newTier, fullList, "dare");
+  if (list.length === 0) { showStatus("No cards available at that tier 😅"); return null; }
+  var randomCard = list[Math.floor(Math.random() * list.length)];
+  var cardIndex = fullList.indexOf(randomCard);
+  return { roundId: genRoundId(), mode: "dare", tier: newTier, cardIndex: cardIndex, performer_user_id: syncTruthRound.performerId };
+}
+
+// Wildcard's pool is the mutual-match pool specifically (not just
+// "not rated no") — "the matched deck" — which is inherently a subset
+// of every card effect's preference-sovereignty requirement.
+function getWildcardPool(tier) {
+  var fullList = gameData[tier].dares;
+  var pool = [];
+  fullList.forEach(function (card, idx) {
+    if (itemMutualMatches.dare[tierItemId(tier, idx)] === true) pool.push({ card: card, cardIndex: idx });
+  });
+  return pool;
+}
+
+function applyReverseEffect(payload) {
+  if (!syncTruthRound || syncTruthRound.roundId !== payload.roundId) return;
+  syncTruthRound.performerId = payload.newPerformerId;
+  syncTruthRound.myRole = payload.newPerformerId === gameSyncMyId() ? "performer" : "judge";
+  var list = gameData[syncTruthRound.tier][syncTruthRound.mode === "truth" ? "truths" : "dares"];
+  var card = list[syncTruthRound.cardIndex];
+  renderSyncedCard(syncTruthRound.mode, syncTruthRound.tier, card, syncTruthRound.cardIndex, syncTruthRound.myRole === "judge");
+  showTruthOrDareJudgeUI(syncTruthRound.mode, syncTruthRound.myRole);
+  showStatus("Roles reversed! 🔄");
+  if (typeof renderHandTray === "function") renderHandTray();
+}
+
+function applyDoubleDownEffect(payload) {
+  if (!syncTruthRound || syncTruthRound.roundId !== payload.roundId) return;
+  syncTruthRound.doubleDown = true;
+  showStatus("Double Down is active — points will be doubled this round! 🔥🔥");
+  if (typeof renderHandTray === "function") renderHandTray();
+}
+
+function applyShieldEffect(payload) {
+  if (!syncTruthRound || syncTruthRound.roundId !== payload.roundId) return;
+  showStatus("Shielded — no penalty this round 🛡️");
+  endSyncTruthRound();
+}
+
+function applyCardEffect(cardType, payload) {
+  if (cardType === "reverse") applyReverseEffect(payload);
+  else if (cardType === "double_down") applyDoubleDownEffect(payload);
+  else if (cardType === "shield") applyShieldEffect(payload);
+  else if (cardType === "redraw" || cardType === "spice" || cardType === "wildcard") {
+    restoreTruthOrDareRound({ payload: payload });
+  }
+}
+
+function showCardAnnouncement(playerName, cardType) {
+  var banner = document.getElementById("cardAnnouncement");
+  var text = document.getElementById("cardAnnouncementText");
+  if (!banner || !text) return;
+  var name = (POWER_CARDS[cardType] && POWER_CARDS[cardType].name) || cardType;
+  text.innerText = playerName + " played " + name.toUpperCase() + "!";
+  banner.classList.remove("hidden");
+  void banner.offsetWidth;
+  banner.classList.add("card-announcement-show");
+  setTimeout(function () {
+    banner.classList.remove("card-announcement-show");
+    banner.classList.add("hidden");
+  }, 2200);
+}
+
+async function commitPowerCardPlay(cardType, payload) {
+  if (!payload || !window.Backend) return;
+  try {
+    await window.Backend.playCard(cardType, payload);
+  } catch (e) {
+    showStatus(e.message || "Couldn't play that card.");
+    return;
+  }
+  myHand[cardType] = Math.max(0, (myHand[cardType] || 0) - 1);
+  if (myHand[cardType] === 0) delete myHand[cardType];
+  applyCardEffect(cardType, payload);
+  showCardAnnouncement(gameSyncMyName || "You", cardType);
+  renderCardShop();
+  renderHandTray();
+}
+
+window.playPowerCard = function (cardType) {
+  if (!isSyncActive() || !window.Backend) return;
+  if (!myHand[cardType] || myHand[cardType] < 1) return;
+  var payload = null;
+  if (cardType === "reverse") payload = buildReversePayload();
+  else if (cardType === "double_down") payload = buildDoubleDownPayload();
+  else if (cardType === "shield") payload = buildShieldPayload();
+  else if (cardType === "redraw") payload = buildRedrawPayload();
+  else if (cardType === "spice") payload = buildSpicePayload();
+  else return; // wildcard is played via openWildcardPicker/chooseWildcardDare instead
+  if (!payload) return;
+  commitPowerCardPlay(cardType, payload);
+};
+
+window.openWildcardPicker = function () {
+  if (!myHand.wildcard || myHand.wildcard < 1 || syncTruthRound) return;
+  var tier = getSelectedTier();
+  var pool = getWildcardPool(tier);
+  var list = document.getElementById("wildcardList");
+  var empty = document.getElementById("wildcardEmpty");
+  if (!list) return;
+  list.innerHTML = "";
+  if (pool.length === 0) {
+    if (empty) empty.classList.remove("hidden");
+  } else {
+    if (empty) empty.classList.add("hidden");
+    pool.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "pos-list-item";
+      row.innerHTML = "<div class=\"pos-list-name\">" + escapeHtml(getCardText(item.card)) + "</div>";
+      row.onclick = (function (tierArg, idx) { return function () { chooseWildcardDare(tierArg, idx); }; })(tier, item.cardIndex);
+      list.appendChild(row);
+    });
+  }
+  document.getElementById("wildcardModal").classList.remove("hidden");
+};
+
+window.closeWildcardPicker = function () {
+  document.getElementById("wildcardModal").classList.add("hidden");
+};
+
+function chooseWildcardDare(tier, cardIndex) {
+  document.getElementById("wildcardModal").classList.add("hidden");
+  var performerId = gameSyncMyId();
+  var payload = { roundId: genRoundId(), mode: "dare", tier: tier, cardIndex: cardIndex, performer_user_id: performerId };
+  commitPowerCardPlay("wildcard", payload);
+}
+
+function applyRemoteCardPlayed(ev) {
+  var p = ev.payload || {};
+  var cardType = p.card;
+  if (!cardType || !POWER_CARDS[cardType]) return;
+  applyCardEffect(cardType, p);
+  showCardAnnouncement(gameSyncPartnerName || "Your partner", cardType);
+}
+
+// ---- shop + hand tray UI ----
+// Visible only on the Truth or Dare page while synced with a partner —
+// solo/unlinked players never see any of this (see updateCardMenuVisibility).
+
+window.toggleCardMenu = function () {
+  var menu = document.getElementById("cardMenu");
+  if (!menu) return;
+  if (cardMenuOpen) {
+    menu.style.right = "-320px";
+    cardMenuOpen = false;
+  } else {
+    menu.style.right = "0px";
+    cardMenuOpen = true;
+    renderCardShop();
+  }
+};
+
+function updateCardMenuVisibility() {
+  var btn = document.getElementById("cardMenuBtn");
+  var truthSection = document.getElementById("truth");
+  var onTruthPage = !!(truthSection && truthSection.classList.contains("active"));
+  var show = isSyncActive() && onTruthPage;
+  if (btn) btn.classList.toggle("hidden", !show);
+  if (!show) {
+    var menu = document.getElementById("cardMenu");
+    if (menu) menu.style.right = "-320px";
+    cardMenuOpen = false;
+  }
+  if (show) { renderCardShop(); renderHandTray(); }
+  else {
+    var tray = document.getElementById("handTray");
+    if (tray) tray.classList.add("hidden");
+  }
+}
+
+function renderCardShop() {
+  var balanceEl = document.getElementById("cardShopBalance");
+  if (balanceEl) balanceEl.innerText = cardBalance.mine + " pts";
+
+  var list = document.getElementById("cardShopList");
+  if (list) {
+    list.innerHTML = "";
+    var atLimit = handCount() >= HAND_LIMIT;
+    POWER_CARD_ORDER.forEach(function (cardType) {
+      var def = POWER_CARDS[cardType];
+      var owned = myHand[cardType] || 0;
+      var canAfford = cardBalance.mine >= def.cost;
+      var disabled = !canAfford || atLimit;
+      var row = document.createElement("div");
+      row.className = "card-shop-item";
+      row.innerHTML =
+        "<div class=\"card-shop-item-head\">" +
+          "<span class=\"card-shop-name\">" + def.name + "</span>" +
+          "<span class=\"card-shop-cost\">" + def.cost + " pts</span>" +
+        "</div>" +
+        "<div class=\"card-shop-effect\">" + def.effect + "</div>" +
+        (owned > 0 ? "<div class=\"card-shop-owned\">You have " + owned + "</div>" : "") +
+        "<button class=\"card-shop-buy-btn\" type=\"button\"" + (disabled ? " disabled" : "") + ">Buy</button>";
+      var buyBtn = row.querySelector(".card-shop-buy-btn");
+      buyBtn.onclick = (function (ct, cost) { return function () { buyPowerCard(ct, cost); }; })(cardType, def.cost);
+      list.appendChild(row);
+    });
+  }
+
+  var handList = document.getElementById("cardShopHand");
+  if (handList) {
+    var entries = Object.keys(myHand).filter(function (k) { return myHand[k] > 0; });
+    if (entries.length === 0) {
+      handList.innerHTML = "<p class=\"card-shop-empty\">Your hand is empty.</p>";
+    } else {
+      handList.innerHTML = entries.map(function (k) {
+        return "<span class=\"card-shop-hand-chip\">" + (POWER_CARDS[k] ? POWER_CARDS[k].name : k) + " ×" + myHand[k] + "</span>";
+      }).join("");
+    }
+  }
+}
+
+async function buyPowerCard(cardType, cost) {
+  if (!window.Backend) return;
+  if (cardBalance.mine < cost || handCount() >= HAND_LIMIT) return;
+  try {
+    await window.Backend.buyCard(cardType, cost);
+  } catch (e) {
+    showStatus(e.message || "Couldn't buy that card.");
+    return;
+  }
+  cardBalance.mine = Math.max(0, cardBalance.mine - cost);
+  myHand[cardType] = (myHand[cardType] || 0) + 1;
+  renderCardShop();
+  renderHandTray();
+  showStatus("Bought " + POWER_CARDS[cardType].name + "! 🃏");
+}
+
+function getPlayableCards() {
+  var playable = [];
+  if (!isSyncActive()) return playable;
+  if (syncTruthRound && syncTruthRound.myRole === "performer") {
+    if (!syncTruthRound.doubleDown && myHand.double_down) playable.push("double_down");
+    if (myHand.reverse) playable.push("reverse");
+    if (myHand.shield) playable.push("shield");
+    if (myHand.redraw) playable.push("redraw");
+    if (syncTruthRound.mode === "dare" && myHand.spice) playable.push("spice");
+  } else if (!syncTruthRound && myHand.wildcard) {
+    playable.push("wildcard");
+  }
+  return playable;
+}
+
+function renderHandTray() {
+  var tray = document.getElementById("handTray");
+  if (!tray) return;
+  if (!isSyncActive()) { tray.classList.add("hidden"); tray.innerHTML = ""; return; }
+  var playable = getPlayableCards();
+  if (playable.length === 0) { tray.classList.add("hidden"); tray.innerHTML = ""; return; }
+  tray.innerHTML = "";
+  playable.forEach(function (cardType) {
+    var def = POWER_CARDS[cardType];
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "hand-tray-card";
+    btn.innerHTML = def.name + " <span class=\"hand-tray-qty\">×" + myHand[cardType] + "</span>";
+    btn.onclick = cardType === "wildcard"
+      ? function () { window.openWildcardPicker(); }
+      : (function (ct) { return function () { window.playPowerCard(ct); }; })(cardType);
+    tray.appendChild(btn);
+  });
+  tray.classList.remove("hidden");
 }
 
 // ========================= //

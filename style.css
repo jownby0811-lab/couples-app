@@ -26,6 +26,9 @@ body::before {
   padding: 16px;
   text-align: left;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .menu-btn {
@@ -1428,6 +1431,231 @@ hr {
 .drink-toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* ========================= */
+/* POWER CARDS               */
+/* ========================= */
+/* Right-side shop menu, mirroring .menu/.menu-btn but sliding in from
+   the opposite edge — visible only on Truth or Dare while synced. */
+
+.card-menu-btn {
+  font-size: 60px;
+  cursor: pointer;
+  background: linear-gradient(90deg, #c8cdd6 0%, #c9a97a 57%, #c9a97a 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.card-menu-btn.hidden { display: none; }
+
+.card-menu {
+  position: fixed;
+  top: 0;
+  right: -320px;
+  width: 300px;
+  height: 100%;
+  background: #171015;
+  transition: 0.3s;
+  padding: 65px 18px 24px;
+  text-align: left;
+  z-index: 10;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.6);
+  overflow-y: auto;
+  border-left: 1px solid rgba(201, 169, 122, 0.15);
+}
+
+.card-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.card-menu-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  background: linear-gradient(90deg, #c9a97a 0%, #c8cdd6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.card-menu-balance {
+  font-size: 14px;
+  font-weight: 700;
+  color: #c9a97a;
+  background: rgba(201, 169, 122, 0.1);
+  border: 1px solid rgba(201, 169, 122, 0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.card-shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.card-shop-item {
+  background: linear-gradient(145deg, #1a1e24, #242a30);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.card-shop-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.card-shop-name {
+  font-family: 'Playfair Display', serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: #fff5f7;
+}
+
+.card-shop-cost {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c9a97a;
+}
+
+.card-shop-effect {
+  font-size: 12px;
+  color: rgba(255, 245, 247, 0.55);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.card-shop-owned {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7ddc97;
+  margin-bottom: 8px;
+}
+
+.card-shop-buy-btn {
+  width: 100%;
+  padding: 9px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.card-shop-buy-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.card-shop-hand-section { margin-top: 4px; }
+
+.card-shop-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.card-shop-hand-chip {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: rgba(201, 169, 122, 0.14);
+  border: 1px solid rgba(201, 169, 122, 0.35);
+  color: #c9a97a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.card-shop-empty {
+  font-size: 12px;
+  color: rgba(255, 245, 247, 0.4);
+  margin: 0;
+}
+
+/* Contextual "play a card" tray on the Truth or Dare page itself */
+.hand-tray {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px auto 0;
+  max-width: 360px;
+}
+
+.hand-tray.hidden { display: none; }
+
+.hand-tray-card {
+  padding: 10px 16px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(201, 169, 122, 0.22), rgba(200, 205, 214, 0.14));
+  color: #c9a97a;
+  border: 1px solid rgba(201, 169, 122, 0.5);
+  box-shadow: 0 0 12px rgba(201, 169, 122, 0.18);
+  cursor: pointer;
+}
+
+.hand-tray-card:hover {
+  background: linear-gradient(135deg, rgba(201, 169, 122, 0.32), rgba(200, 205, 214, 0.2));
+  transform: translateY(-1px);
+}
+
+.hand-tray-qty {
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+/* Dramatic full-width "{name} played {CARD}!" banner */
+.card-announcement {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 300;
+  text-align: center;
+  pointer-events: none;
+}
+
+.card-announcement.hidden { display: none; }
+
+.card-announcement span {
+  display: inline-block;
+  margin-top: 90px;
+  padding: 18px 36px;
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #12070d;
+  background: linear-gradient(135deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(201, 169, 122, 0.55);
+  opacity: 0;
+}
+
+.card-announcement.card-announcement-show span {
+  animation: cardAnnouncementPop 2.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes cardAnnouncementPop {
+  0%   { opacity: 0; transform: scale(0.6) translateY(-20px); }
+  15%  { opacity: 1; transform: scale(1.08) translateY(0); }
+  25%  { opacity: 1; transform: scale(1) translateY(0); }
+  85%  { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; transform: scale(0.9) translateY(-14px); }
 }
 
 /* ========================= */
