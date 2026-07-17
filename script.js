@@ -15,6 +15,10 @@ window.showPage = function (pageId) {
     updateMatchedOnlyUI();
     refreshAllPreferenceCaches();
   }
+  if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
+    resizeWheelCanvas();
+    drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+  }
   if (typeof setGameSyncPage === "function") setGameSyncPage(pageId);
 };
 
@@ -2521,7 +2525,15 @@ function initWheelPage() {
   wheelCurrentPlayer = 'john';
   wheelRotationDeg = 0;
   updateWheelTurnDisplay();
+  resizeWheelCanvas();
   drawWheelCanvas(0, -1);
+  // Canvas text doesn't wait for web fonts on its own — force a crisp
+  // redraw once the italic Playfair Display face has actually loaded.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+    });
+  }
 }
 
 function updateWheelTurnDisplay() {
@@ -2538,15 +2550,74 @@ window.wheelTierChanged = function () {
   drawWheelCanvas(wheelRotationDeg, -1);
 };
 
+var wheelResizeTimer = null;
+window.addEventListener('resize', function () {
+  if (wheelResizeTimer) clearTimeout(wheelResizeTimer);
+  wheelResizeTimer = setTimeout(function () {
+    var wheelSection = document.getElementById('wheel');
+    if (wheelSection && wheelSection.classList.contains('active')) {
+      resizeWheelCanvas();
+      drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+    }
+  }, 150);
+});
+
 function easeOutCubicWheel(t) {
   return 1 - Math.pow(1 - t, 3);
+}
+
+// Fits an (optionally two-word) segment label into the available chord
+// width by shrinking the italic Playfair Display size, then draws it with
+// a soft rose-gold glow behind high-contrast dark fill. Auto-fit keeps this
+// legible regardless of exact glyph metrics (script/serif fonts vary).
+function drawWheelSegmentLabel(ctx, label, availWidth, baseSize, minSize) {
+  var parts = label.indexOf(' ') !== -1 ? label.split(' ') : [label];
+  var size = baseSize;
+  function setFont(s) { ctx.font = 'italic 700 ' + s + 'px "Playfair Display", serif'; }
+  function widestPart() {
+    var w = 0;
+    parts.forEach(function (p) { w = Math.max(w, ctx.measureText(p).width); });
+    return w;
+  }
+  setFont(size);
+  while (size > minSize && widestPart() > availWidth) {
+    size -= 1;
+    setFont(size);
+  }
+  ctx.shadowColor = 'rgba(201,169,122,0.65)';
+  ctx.shadowBlur = Math.max(3, Math.round(size * 0.22));
+  ctx.fillStyle = '#1b1008';
+  if (parts.length === 2) {
+    var lineGap = size * 0.98;
+    ctx.fillText(parts[0], 0, -lineGap / 2);
+    ctx.fillText(parts[1], 0, lineGap / 2);
+  } else {
+    ctx.fillText(parts[0], 0, 0);
+  }
+  ctx.shadowBlur = 0;
+}
+
+function resizeWheelCanvas() {
+  var canvas = document.getElementById('wheelCanvas');
+  var wrapper = document.querySelector('.wheel-wrapper');
+  if (!canvas || !wrapper) return;
+  var size = wrapper.clientWidth;
+  if (!size) return;
+  var dpr = window.devicePixelRatio || 1;
+  var target = Math.round(size * dpr);
+  if (canvas.width !== target) {
+    canvas.width = target;
+    canvas.height = target;
+  }
 }
 
 function drawWheelCanvas(rotDeg, landedSeg) {
   var canvas = document.getElementById('wheelCanvas');
   if (!canvas) return;
   var ctx = canvas.getContext('2d');
-  var W = canvas.width, H = canvas.height;
+  var dpr = window.devicePixelRatio || 1;
+  var W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   var cx = W / 2, cy = H / 2;
   var outerR = cx - 5;
   var numSeg = 6;
@@ -2589,22 +2660,20 @@ function drawWheelCanvas(rotDeg, landedSeg) {
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Label at segment center (upright text)
+    // Label at segment center — elegant italic serif, no emoji, sized to
+    // the wheel and auto-fit to the segment so it never gets clipped.
     var midAngle = rot + (i + 0.5) * arcAngle;
-    var labelR = outerR * 0.60;
+    var labelR = outerR * 0.62;
     var textX = cx + Math.cos(midAngle) * labelR;
     var textY = cy + Math.sin(midAngle) * labelR;
+    var availWidth = 2 * labelR * Math.sin(arcAngle / 2) * 0.82;
+    var baseFontSize = Math.max(14, Math.round(outerR * 0.16));
 
     ctx.save();
     ctx.translate(textX, textY);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '22px serif';
-    ctx.fillStyle = '#12070d';
-    ctx.fillText(segs[i].emoji, 0, -11);
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillStyle = '#12070d';
-    ctx.fillText(segs[i].label, 0, 10);
+    drawWheelSegmentLabel(ctx, segs[i].label, availWidth, baseFontSize, 11);
     ctx.restore();
   }
 
