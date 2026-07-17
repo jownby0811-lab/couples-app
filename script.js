@@ -878,6 +878,69 @@ function compileShader(gl, type, src) {
   return s;
 }
 
+// A small pre-baked noise texture, sampled from the fragment shader instead
+// of computing a sin()-based hash per-pixel. Mobile GPUs commonly run
+// fragment shaders at mediump precision, and the classic
+// fract(sin(dot(p, big constants)) * bigConstant) hash relies on sin()
+// staying chaotic for large arguments — under mediump this collapses into
+// smooth, banded, or near-constant output (a well-documented WebGL/mobile
+// GLSL gotcha), which is exactly what turns an intended jagged burn edge
+// into a smooth circle. Texture sampling doesn't have that failure mode:
+// it's a hardware-interpolated memory read, not an arithmetic computation
+// sensitive to float precision, so it stays organic on mediump-only GPUs.
+var NOISE_TEX_SIZE = 64;
+var noiseTexData = null;
+function getNoiseTextureData() {
+  if (noiseTexData) return noiseTexData;
+  var size = NOISE_TEX_SIZE;
+  var data = new Uint8Array(size * size);
+  // Simple seeded PRNG (mulberry32) so the noise pattern is stable across
+  // reloads within a session and reproducible for debugging.
+  var seed = 1337;
+  function rand() {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  for (var i = 0; i < data.length; i++) data[i] = Math.floor(rand() * 256);
+  noiseTexData = data;
+  return data;
+}
+
+function createNoiseTexture(gl) {
+  var tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, NOISE_TEX_SIZE, NOISE_TEX_SIZE, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, getNoiseTextureData());
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  // No mipmaps generated, so MIN_FILTER must be a non-mipmap mode or the
+  // texture is "incomplete" (samples as black) per the WebGL1 spec.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return tex;
+}
+
+// Device-level (not shader-specific) capability query: if HIGH_FLOAT has
+// nonzero precision for the fragment shader stage, GL_FRAGMENT_PRECISION_HIGH
+// is defined by the driver during compilation, so a shader guarded with
+// #ifdef GL_FRAGMENT_PRECISION_HIGH will actually get highp. This lets us
+// know — and report in the debug badge — which branch a given shader took
+// without needing anything special from the shader itself.
+function getFragmentPrecisionInfo(gl) {
+  function fmt(fmtInfo) {
+    if (!fmtInfo) return null;
+    return { rangeMin: fmtInfo.rangeMin, rangeMax: fmtInfo.rangeMax, precision: fmtInfo.precision };
+  }
+  var high = null, medium = null;
+  try {
+    high = fmt(gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT));
+    medium = fmt(gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.MEDIUM_FLOAT));
+  } catch (e) { /* getShaderPrecisionFormat unsupported — treat as mediump-only */ }
+  var highpSupported = !!(high && high.precision > 0 && (high.rangeMin > 0 || high.rangeMax > 0));
+  return { highpSupported: highpSupported, high: high, medium: medium };
+}
+
 function compileGLProgram(canvasId, vertSrc, fragSrc) {
   var canvas = document.getElementById(canvasId);
   if (!canvas) throw new Error(canvasId + " element missing");
@@ -897,16 +960,69 @@ function compileGLProgram(canvasId, vertSrc, fragSrc) {
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   var positionLoc = gl.getAttribLocation(program, "a_position");
+  var noiseTex = createNoiseTexture(gl);
   return {
     gl: gl, canvas: canvas, program: program, buffer: buffer,
     positionLoc: positionLoc,
     timeLoc: gl.getUniformLocation(program, "u_time"),
-    resLoc: gl.getUniformLocation(program, "u_resolution")
+    resLoc: gl.getUniformLocation(program, "u_resolution"),
+    noiseTex: noiseTex,
+    noiseTexLoc: gl.getUniformLocation(program, "u_noiseTex"),
+    precisionInfo: getFragmentPrecisionInfo(gl)
   };
 }
 
 function prefersReducedMotion() {
   return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+// ========================= //
+// BURN DEBUG BADGE          //
+// ========================= //
+// Opt-in via ?debug=burn — an on-screen (not console) readout of which
+// render path is actually active (WebGL vs CSS fallback) and the
+// fragment shader's precision situation, so this is checkable on a real
+// phone with no devtools attached.
+
+var DEBUG_BURN = (function () {
+  try {
+    return new URLSearchParams(window.location.search).get("debug") === "burn";
+  } catch (e) { return false; }
+})();
+
+function ensureDebugBadge() {
+  var el = document.getElementById("burnDebugBadge");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "burnDebugBadge";
+  el.style.cssText = "position:fixed;bottom:8px;left:8px;z-index:99999;" +
+    "background:rgba(0,0,0,0.85);color:#c9e6a9;font:11px/1.4 monospace;" +
+    "padding:8px 10px;border-radius:8px;max-width:92vw;white-space:pre-wrap;" +
+    "pointer-events:none;border:1px solid rgba(255,255,255,0.2);";
+  el.textContent = "burn debug: waiting for first draw/resolve…";
+  document.body.appendChild(el);
+  return el;
+}
+
+function describePrecision(precisionInfo) {
+  if (!precisionInfo) return "unknown";
+  var usesHighp = precisionInfo.highpSupported;
+  var active = usesHighp ? "highp" : "mediump";
+  var high = precisionInfo.high;
+  var medium = precisionInfo.medium;
+  var line = "shader precision: " + active + " (device " + (usesHighp ? "supports" : "does NOT support") + " highp in fragment shaders)";
+  if (high) line += "\n  highp:   range[2^" + high.rangeMin + ",2^" + high.rangeMax + "] precision 2^-" + high.precision;
+  if (medium) line += "\n  mediump: range[2^" + medium.rangeMin + ",2^" + medium.rangeMax + "] precision 2^-" + medium.precision;
+  return line;
+}
+
+function updateDebugBadge(label, pathInfo) {
+  if (!DEBUG_BURN) return;
+  var el = ensureDebugBadge();
+  var lines = ["burn debug — " + label, "path: " + pathInfo.path];
+  if (pathInfo.precisionInfo) lines.push(describePrecision(pathInfo.precisionInfo));
+  if (pathInfo.note) lines.push(pathInfo.note);
+  el.textContent = lines.join("\n");
 }
 
 var GL_VERT_SRC = [
@@ -937,17 +1053,17 @@ var revealGLFailed = false;
 var revealAnimFrame = null;
 
 var REVEAL_FRAG_SRC = [
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH",
+  "precision highp float;",
+  "#else",
   "precision mediump float;",
+  "#endif",
   "varying vec2 v_uv;",
   "uniform float u_time;",
   "uniform vec2 u_resolution;",
-  "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }",
+  "uniform sampler2D u_noiseTex;",
   "float noise(vec2 p) {",
-  "  vec2 i = floor(p); vec2 f = fract(p);",
-  "  float a = hash(i); float b = hash(i + vec2(1.0, 0.0));",
-  "  float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));",
-  "  vec2 u = f * f * (3.0 - 2.0 * f);",
-  "  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;",
+  "  return texture2D(u_noiseTex, p * 0.015625).r;",
   "}",
   "float fbm(vec2 p) {",
   "  float v = 0.0; float amp = 0.55;",
@@ -1018,12 +1134,14 @@ function triggerBurnReveal(card) {
   }
 
   if (prefersReducedMotion()) {
+    updateDebugBadge("reveal", { path: "CSS quick fade (prefers-reduced-motion)" });
     runRevealCSSFallback(true);
     return;
   }
 
   var ctx = setupRevealGL();
   if (!ctx || revealGLFailed) {
+    updateDebugBadge("reveal", { path: "CSS fallback (WebGL unavailable or previously failed)" });
     runRevealCSSFallback(false);
     return;
   }
@@ -1044,8 +1162,12 @@ function triggerBurnReveal(card) {
     gl.enableVertexAttribArray(ctx.positionLoc);
     gl.vertexAttribPointer(ctx.positionLoc, 2, gl.FLOAT, false, 0, 0);
     gl.uniform2f(ctx.resLoc, w, h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, ctx.noiseTex);
+    gl.uniform1i(ctx.noiseTexLoc, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    updateDebugBadge("reveal", { path: "WebGL", precisionInfo: ctx.precisionInfo });
 
     var duration = 1450;
     var start = null;
@@ -1064,6 +1186,7 @@ function triggerBurnReveal(card) {
           revealGLFailed = true;
           canvas.classList.add("hidden");
           revealAnimFrame = null;
+          updateDebugBadge("reveal", { path: "CSS fallback (WebGL struggled mid-animation)", precisionInfo: ctx.precisionInfo });
           runRevealCSSFallback(false);
           return;
         }
@@ -1079,6 +1202,7 @@ function triggerBurnReveal(card) {
         revealGLFailed = true;
         canvas.classList.add("hidden");
         revealAnimFrame = null;
+        updateDebugBadge("reveal", { path: "CSS fallback (WebGL render threw mid-animation)", precisionInfo: ctx.precisionInfo });
         runRevealCSSFallback(false);
         return;
       }
@@ -1097,6 +1221,7 @@ function triggerBurnReveal(card) {
     revealGLFailed = true;
     var canvasEl = document.getElementById("revealCanvas");
     if (canvasEl) canvasEl.classList.add("hidden");
+    updateDebugBadge("reveal", { path: "CSS fallback (WebGL setup threw)" });
     runRevealCSSFallback(false);
   }
 }
@@ -1125,17 +1250,17 @@ var burnGLFailed = false;
 var burnAnimFrame = null;
 
 var BURN_FRAG_SRC = [
+  "#ifdef GL_FRAGMENT_PRECISION_HIGH",
+  "precision highp float;",
+  "#else",
   "precision mediump float;",
+  "#endif",
   "varying vec2 v_uv;",
   "uniform float u_time;",
   "uniform vec2 u_resolution;",
-  "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }",
+  "uniform sampler2D u_noiseTex;",
   "float noise(vec2 p) {",
-  "  vec2 i = floor(p); vec2 f = fract(p);",
-  "  float a = hash(i); float b = hash(i + vec2(1.0, 0.0));",
-  "  float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));",
-  "  vec2 u = f * f * (3.0 - 2.0 * f);",
-  "  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;",
+  "  return texture2D(u_noiseTex, p * 0.015625).r;",
   "}",
   "float fbm(vec2 p) {",
   "  float v = 0.0; float amp = 0.55;",
@@ -1162,18 +1287,6 @@ var BURN_FRAG_SRC = [
   "  gl_FragColor = vec4(color, alpha);",
   "}"
 ].join("\n");
-
-function compileBurnShader(gl, type, src) {
-  var s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    var log = gl.getShaderInfoLog(s);
-    gl.deleteShader(s);
-    throw new Error("Shader compile failed: " + log);
-  }
-  return s;
-}
 
 function setupBurnGL() {
   if (burnGLProbed) return burnGL;
@@ -1213,12 +1326,14 @@ function triggerCardBurnAway() {
   if (typeof playSfx === "function") playSfx("burn");
 
   if (prefersReducedMotion()) {
+    updateDebugBadge("resolution burn", { path: "CSS quick fade (prefers-reduced-motion)" });
     runBurnCSSFallback(true);
     return;
   }
 
   var ctx = setupBurnGL();
   if (!ctx || burnGLFailed) {
+    updateDebugBadge("resolution burn", { path: "CSS fallback (WebGL unavailable or previously failed)" });
     runBurnCSSFallback(false);
     return;
   }
@@ -1239,8 +1354,12 @@ function triggerCardBurnAway() {
     gl.enableVertexAttribArray(ctx.positionLoc);
     gl.vertexAttribPointer(ctx.positionLoc, 2, gl.FLOAT, false, 0, 0);
     gl.uniform2f(ctx.resLoc, w, h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, ctx.noiseTex);
+    gl.uniform1i(ctx.noiseTexLoc, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    updateDebugBadge("resolution burn", { path: "WebGL", precisionInfo: ctx.precisionInfo });
 
     var duration = 1250;
     var start = null;
@@ -1259,6 +1378,7 @@ function triggerCardBurnAway() {
           burnGLFailed = true;
           canvas.classList.add("hidden");
           burnAnimFrame = null;
+          updateDebugBadge("resolution burn", { path: "CSS fallback (WebGL struggled mid-animation)", precisionInfo: ctx.precisionInfo });
           runBurnCSSFallback(false);
           return;
         }
@@ -1274,6 +1394,7 @@ function triggerCardBurnAway() {
         burnGLFailed = true;
         canvas.classList.add("hidden");
         burnAnimFrame = null;
+        updateDebugBadge("resolution burn", { path: "CSS fallback (WebGL render threw mid-animation)", precisionInfo: ctx.precisionInfo });
         runBurnCSSFallback(false);
         return;
       }
@@ -1291,6 +1412,7 @@ function triggerCardBurnAway() {
     burnGLFailed = true;
     var canvasEl = document.getElementById("burnCanvas");
     if (canvasEl) canvasEl.classList.add("hidden");
+    updateDebugBadge("resolution burn", { path: "CSS fallback (WebGL setup threw)" });
     runBurnCSSFallback(false);
   }
 }
