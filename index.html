@@ -364,7 +364,38 @@
 
 <div id="home" class="section active">
   <h1>Welcome 😏</h1>
-  <p>Select a game from the menu.</p>
+  <p class="home-sub">Pick a game to get started.</p>
+
+  <div class="home-game-grid">
+    <div class="home-game-card" onclick="showPage('truth')">
+      <span class="home-game-icon">🎲</span>
+      <div class="home-game-body">
+        <div class="home-game-name">Truth or Dare</div>
+        <div class="home-game-desc">Draw cards, take turns, score each other.</div>
+      </div>
+    </div>
+    <div class="home-game-card" onclick="showPage('positions')">
+      <span class="home-game-icon">🔥</span>
+      <div class="home-game-body">
+        <div class="home-game-name">Positions</div>
+        <div class="home-game-desc">Browse together and find what you both love.</div>
+      </div>
+    </div>
+    <div class="home-game-card" onclick="showPage('wheel')">
+      <span class="home-game-icon">🎡</span>
+      <div class="home-game-body">
+        <div class="home-game-name">Spin the Wheel</div>
+        <div class="home-game-desc">Let fate pick your next move.</div>
+      </div>
+    </div>
+    <div class="home-game-card" onclick="showPage('personalize')">
+      <span class="home-game-icon">💌</span>
+      <div class="home-game-body">
+        <div class="home-game-name">Personalize</div>
+        <div class="home-game-desc">Rate truths and dares so the deck learns what you're into.</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="truth" class="section">
