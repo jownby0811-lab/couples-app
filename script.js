@@ -859,10 +859,394 @@ function animateCardText(randomText) {
 }
 
 function triggerBurnReveal(card) {
-  card.classList.remove("burn-reveal");
+  card.classList.remove("burn-reveal", "card-reveal-anim");
   void card.offsetWidth;
-  card.classList.add("burn-reveal");
-  setTimeout(() => { card.classList.remove("burn-reveal"); }, 1900);
+  card.classList.add("burn-reveal", "card-reveal-anim");
+  setTimeout(() => { card.classList.remove("burn-reveal", "card-reveal-anim"); }, 1900);
+  if (typeof playSfx === "function") {
+    playSfx("draw");
+    setTimeout(function () { playSfx("reveal"); }, 1550);
+  }
+}
+
+// ========================= //
+// CARD BURN-AWAY (WebGL)    //
+// ========================= //
+// Fires once per card resolution (judged/skipped/discarded by any path,
+// solo or synced) — a fire-and-forget visual overlay on #todCard. Every
+// caller updates game state and UI synchronously and independently;
+// this function only decorates on top and is never awaited.
+//
+// Three tiers, chosen once per session and cached:
+//   1. WebGL noise-dissolve shader (charring edge + rose-gold ember +
+//      spark flicker), ~1.25s.
+//   2. CSS opacity/filter dissolve if WebGL is unavailable or falters
+//      mid-animation (~1.2s, reads similarly).
+//   3. A simple quick opacity fade if prefers-reduced-motion is set
+//      (~0.35s) — this tier is checked first and skips WebGL entirely.
+// The end state is left frozen (charred) rather than reverting, until
+// the next draw explicitly clears it via hideBurnOverlay().
+
+var burnGL = null;
+var burnGLProbed = false;
+var burnGLFailed = false;
+var burnAnimFrame = null;
+
+var BURN_VERT_SRC = [
+  "attribute vec2 a_position;",
+  "varying vec2 v_uv;",
+  "void main() {",
+  "  v_uv = a_position * 0.5 + 0.5;",
+  "  gl_Position = vec4(a_position, 0.0, 1.0);",
+  "}"
+].join("\n");
+
+var BURN_FRAG_SRC = [
+  "precision mediump float;",
+  "varying vec2 v_uv;",
+  "uniform float u_time;",
+  "uniform vec2 u_resolution;",
+  "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }",
+  "float noise(vec2 p) {",
+  "  vec2 i = floor(p); vec2 f = fract(p);",
+  "  float a = hash(i); float b = hash(i + vec2(1.0, 0.0));",
+  "  float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));",
+  "  vec2 u = f * f * (3.0 - 2.0 * f);",
+  "  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;",
+  "}",
+  "float fbm(vec2 p) {",
+  "  float v = 0.0; float amp = 0.55;",
+  "  for (int i = 0; i < 4; i++) { v += amp * noise(p); p *= 2.05; amp *= 0.5; }",
+  "  return v;",
+  "}",
+  "void main() {",
+  "  vec2 uv = v_uv;",
+  "  vec2 aspect = vec2(u_resolution.x / max(u_resolution.y, 1.0), 1.0);",
+  "  float n = fbm(uv * aspect * 5.0 + vec2(0.0, u_time * 0.4));",
+  "  float bias = (1.0 - uv.y) * 0.15 + abs(uv.x - 0.5) * 0.1;",
+  "  float t = n + bias;",
+  "  float p = u_time * 1.25;",
+  "  float burnt = step(t, p);",
+  "  float edge = smoothstep(p - 0.09, p, t) * (1.0 - smoothstep(p, p + 0.09, t)) * (1.0 - burnt);",
+  "  float sparkNoise = noise(uv * aspect * 40.0 + u_time * 30.0);",
+  "  float spark = edge * step(0.88, sparkNoise) * 1.4;",
+  "  vec3 emberColor = vec3(0.79, 0.66, 0.48);",
+  "  vec3 hotColor = vec3(1.0, 0.85, 0.6);",
+  "  vec3 charColor = vec3(0.04, 0.02, 0.02);",
+  "  vec3 emberGlow = mix(emberColor, hotColor, clamp(spark, 0.0, 1.0)) * (edge * 1.6 + spark);",
+  "  float alpha = clamp(burnt * 0.94 + edge * 0.9, 0.0, 1.0);",
+  "  vec3 color = mix(charColor, emberGlow, clamp(edge * 2.0 + spark, 0.0, 1.0));",
+  "  gl_FragColor = vec4(color, alpha);",
+  "}"
+].join("\n");
+
+function compileBurnShader(gl, type, src) {
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    var log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error("Shader compile failed: " + log);
+  }
+  return s;
+}
+
+function setupBurnGL() {
+  if (burnGLProbed) return burnGL;
+  burnGLProbed = true;
+  try {
+    var canvas = document.getElementById("burnCanvas");
+    if (!canvas) throw new Error("burnCanvas element missing");
+    var gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: false }) ||
+      canvas.getContext("experimental-webgl", { alpha: true, premultipliedAlpha: true, antialias: false });
+    if (!gl) throw new Error("WebGL context unavailable");
+    var vs = compileBurnShader(gl, gl.VERTEX_SHADER, BURN_VERT_SRC);
+    var fs = compileBurnShader(gl, gl.FRAGMENT_SHADER, BURN_FRAG_SRC);
+    var program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error("Program link failed: " + gl.getProgramInfoLog(program));
+    }
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    var positionLoc = gl.getAttribLocation(program, "a_position");
+    burnGL = {
+      gl: gl, canvas: canvas, program: program, buffer: buffer,
+      positionLoc: positionLoc,
+      timeLoc: gl.getUniformLocation(program, "u_time"),
+      resLoc: gl.getUniformLocation(program, "u_resolution")
+    };
+  } catch (e) {
+    console.warn("WebGL burn effect unavailable, using CSS fallback", e);
+    burnGL = null;
+    burnGLFailed = true;
+  }
+  return burnGL;
+}
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function runBurnCSSFallback(quick) {
+  var el = document.getElementById("burnFallback");
+  if (!el) return;
+  el.classList.remove("hidden", "burn-fallback-quick", "burn-fallback-play");
+  void el.offsetWidth;
+  el.classList.add(quick ? "burn-fallback-quick" : "burn-fallback-play");
+}
+
+function hideBurnOverlay() {
+  if (burnAnimFrame) { cancelAnimationFrame(burnAnimFrame); burnAnimFrame = null; }
+  var canvas = document.getElementById("burnCanvas");
+  if (canvas) canvas.classList.add("hidden");
+  var fallback = document.getElementById("burnFallback");
+  if (fallback) {
+    fallback.classList.add("hidden");
+    fallback.classList.remove("burn-fallback-quick", "burn-fallback-play");
+  }
+}
+
+function triggerCardBurnAway() {
+  var cardEl = document.getElementById("todCard");
+  if (!cardEl) return;
+  if (typeof playSfx === "function") playSfx("burn");
+
+  if (prefersReducedMotion()) {
+    runBurnCSSFallback(true);
+    return;
+  }
+
+  var ctx = setupBurnGL();
+  if (!ctx || burnGLFailed) {
+    runBurnCSSFallback(false);
+    return;
+  }
+
+  try {
+    var canvas = ctx.canvas;
+    var rect = cardEl.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.round(rect.width * dpr));
+    var h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    canvas.classList.remove("hidden");
+
+    var gl = ctx.gl;
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(ctx.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ctx.buffer);
+    gl.enableVertexAttribArray(ctx.positionLoc);
+    gl.vertexAttribPointer(ctx.positionLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform2f(ctx.resLoc, w, h);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    var duration = 1250;
+    var start = null;
+    var lastTs = null;
+    var slowFrames = 0;
+    if (burnAnimFrame) cancelAnimationFrame(burnAnimFrame);
+
+    function frame(ts) {
+      if (start === null) { start = ts; lastTs = ts; }
+      var delta = ts - lastTs;
+      lastTs = ts;
+      if (delta > 120) {
+        slowFrames++;
+        if (slowFrames >= 3) {
+          console.warn("WebGL burn effect struggling on this device, switching to CSS fallback");
+          burnGLFailed = true;
+          canvas.classList.add("hidden");
+          burnAnimFrame = null;
+          runBurnCSSFallback(false);
+          return;
+        }
+      }
+      var t = Math.min(1, (ts - start) / duration);
+      try {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform1f(ctx.timeLoc, t);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      } catch (e) {
+        console.warn("WebGL burn render failed mid-animation, switching to CSS fallback", e);
+        burnGLFailed = true;
+        canvas.classList.add("hidden");
+        burnAnimFrame = null;
+        runBurnCSSFallback(false);
+        return;
+      }
+      if (t < 1) {
+        burnAnimFrame = requestAnimationFrame(frame);
+      } else {
+        burnAnimFrame = null;
+        // Frame left drawn (canvas stays visible) — the card reads as
+        // burnt until the next draw calls hideBurnOverlay().
+      }
+    }
+    burnAnimFrame = requestAnimationFrame(frame);
+  } catch (e) {
+    console.warn("WebGL burn effect failed, using CSS fallback", e);
+    burnGLFailed = true;
+    var canvasEl = document.getElementById("burnCanvas");
+    if (canvasEl) canvasEl.classList.add("hidden");
+    runBurnCSSFallback(false);
+  }
+}
+
+// ========================= //
+// SOUND FX                  //
+// ========================= //
+// Small synthesized sound set via the Web Audio API — everything below
+// is generated code, so there's zero audio-asset payload. Sounds
+// default on; the mute toggle in the main menu persists to
+// localStorage. playSfx() rate-limits each sound type independently so
+// rapid-fire events (e.g. a fast double-tap) never stack or clip —
+// different sounds are still free to layer naturally.
+
+var soundMuted = localStorage.getItem("soundMuted") === "true";
+var sfxAudioCtx = null;
+var sfxLastPlayedAt = {};
+var SFX_MIN_INTERVAL_MS = 70;
+
+function getSfxAudioCtx() {
+  if (sfxAudioCtx) return sfxAudioCtx;
+  try {
+    var Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    sfxAudioCtx = new Ctor();
+  } catch (e) {
+    sfxAudioCtx = null;
+  }
+  return sfxAudioCtx;
+}
+
+function sfxTone(ctx, freq, startAt, duration, opts) {
+  opts = opts || {};
+  var osc = ctx.createOscillator();
+  osc.type = opts.type || "sine";
+  osc.frequency.setValueAtTime(freq, startAt);
+  if (opts.freqEnd != null) {
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, opts.freqEnd), startAt + duration);
+  }
+  var gain = ctx.createGain();
+  var peak = opts.gain != null ? opts.gain : 0.16;
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(peak, startAt + (opts.attack || 0.012));
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startAt);
+  osc.stop(startAt + duration + 0.03);
+}
+
+function sfxNoiseBurst(ctx, startAt, duration, opts) {
+  opts = opts || {};
+  var bufferSize = Math.max(1, Math.round(ctx.sampleRate * duration));
+  var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  var data = buffer.getChannelData(0);
+  for (var i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  var src = ctx.createBufferSource();
+  src.buffer = buffer;
+  var filter = ctx.createBiquadFilter();
+  filter.type = opts.filterType || "bandpass";
+  filter.frequency.setValueAtTime(opts.filterFreq || 1200, startAt);
+  if (opts.filterFreqEnd != null) {
+    filter.frequency.exponentialRampToValueAtTime(Math.max(1, opts.filterFreqEnd), startAt + duration);
+  }
+  filter.Q.value = opts.q != null ? opts.q : 1;
+  var gain = ctx.createGain();
+  var peak = opts.gain != null ? opts.gain : 0.14;
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(peak, startAt + (opts.attack || 0.01));
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  src.start(startAt);
+  src.stop(startAt + duration + 0.03);
+}
+
+var SFX_BUILDERS = {
+  // Card draw — soft slide/snap.
+  draw: function (ctx, t0) {
+    sfxNoiseBurst(ctx, t0, 0.09, { filterType: "highpass", filterFreq: 1800, gain: 0.10, attack: 0.005 });
+    sfxTone(ctx, 260, t0, 0.09, { type: "triangle", freqEnd: 90, gain: 0.10, attack: 0.004 });
+  },
+  // Reveal — subtle whoosh.
+  reveal: function (ctx, t0) {
+    sfxNoiseBurst(ctx, t0, 0.38, { filterType: "bandpass", filterFreq: 300, filterFreqEnd: 2200, q: 0.7, gain: 0.09, attack: 0.05 });
+  },
+  // Burn — low crackle: a handful of tiny noise ticks scattered across ~0.5s.
+  burn: function (ctx, t0) {
+    var ticks = 6;
+    for (var i = 0; i < ticks; i++) {
+      var at = t0 + Math.random() * 0.5;
+      sfxNoiseBurst(ctx, at, 0.03 + Math.random() * 0.03, {
+        filterType: "lowpass", filterFreq: 700 + Math.random() * 500,
+        gain: 0.06 + Math.random() * 0.04, attack: 0.002
+      });
+    }
+  },
+  // Points awarded — warm chime (root + third + fifth).
+  points: function (ctx, t0) {
+    [523.25, 659.25, 783.99].forEach(function (f, i) {
+      sfxTone(ctx, f, t0 + i * 0.02, 0.7, { type: "sine", gain: 0.11, attack: 0.008 });
+    });
+  },
+  // Truth passed — light positive two-note rise.
+  truthPass: function (ctx, t0) {
+    sfxTone(ctx, 523.25, t0, 0.16, { type: "sine", gain: 0.13, attack: 0.006 });
+    sfxTone(ctx, 659.25, t0 + 0.09, 0.22, { type: "sine", gain: 0.13, attack: 0.006 });
+  },
+  // Truth failed — a dramatic low descending tone.
+  truthFail: function (ctx, t0) {
+    sfxTone(ctx, 220, t0, 0.32, { type: "sine", freqEnd: 130, gain: 0.13, attack: 0.008 });
+  },
+  // Power card played — bold stinger for the announcement banner.
+  cardPlayed: function (ctx, t0) {
+    sfxTone(ctx, 180, t0, 0.32, { type: "sawtooth", freqEnd: 90, gain: 0.14, attack: 0.004 });
+    sfxTone(ctx, 440, t0, 0.22, { type: "square", gain: 0.08, attack: 0.004 });
+    sfxNoiseBurst(ctx, t0, 0.12, { filterType: "highpass", filterFreq: 2000, gain: 0.08, attack: 0.002 });
+  },
+  // Love-glow reveal — delicate ascending sparkle.
+  sparkle: function (ctx, t0) {
+    [1046.5, 1318.5, 1568.0, 2093.0].forEach(function (f, i) {
+      sfxTone(ctx, f, t0 + i * 0.045, 0.14, { type: "sine", gain: 0.06, attack: 0.003 });
+    });
+  }
+};
+
+function playSfx(name) {
+  if (soundMuted || !SFX_BUILDERS[name]) return;
+  var now = Date.now();
+  if (sfxLastPlayedAt[name] && now - sfxLastPlayedAt[name] < SFX_MIN_INTERVAL_MS) return;
+  sfxLastPlayedAt[name] = now;
+  var ctx = getSfxAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === "suspended") { ctx.resume().catch(function () {}); }
+  try {
+    SFX_BUILDERS[name](ctx, ctx.currentTime);
+  } catch (e) {
+    console.warn("Sound effect failed:", name, e);
+  }
+}
+
+window.toggleSoundMute = function () {
+  soundMuted = !soundMuted;
+  localStorage.setItem("soundMuted", soundMuted);
+  updateSoundMuteUI();
+};
+
+function updateSoundMuteUI() {
+  var el = document.getElementById("soundMuteToggle");
+  if (!el) return;
+  el.innerText = soundMuted ? "🔇 Sound Off" : "🔊 Sound On";
 }
 
 function applyCardGenderStyle(cardElement, genderList) {
@@ -878,6 +1262,7 @@ function applyCardGenderStyle(cardElement, genderList) {
 
 function getTruth() {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("truth"); return; }
   let tier = getSelectedTier();
   let fullList = gameData[tier].truths;
@@ -904,6 +1289,7 @@ function getTruth() {
 
 function getDare() {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getSelectedTier();
   let fullList = gameData[tier].dares;
@@ -989,6 +1375,8 @@ function passTruth() {
   }
   updateScoreDisplay();
   endTurn();
+  if (typeof playSfx === "function") playSfx("truthPass");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   if (currentCardMeta) showInGameRatingStrip(currentCardMeta.mode, currentCardMeta.tier, currentCardMeta.cardIndex);
 }
 
@@ -996,6 +1384,8 @@ function failTruth() {
   if (isSyncActive()) { syncJudgeTruth("fail"); return; }
   showStatus("No points awarded 😅");
   endTurn();
+  if (typeof playSfx === "function") playSfx("truthFail");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   if (currentCardMeta) showInGameRatingStrip(currentCardMeta.mode, currentCardMeta.tier, currentCardMeta.cardIndex);
 }
 
@@ -1012,6 +1402,8 @@ function awardPoints(points) {
   }
   updateScoreDisplay();
   endTurn();
+  if (typeof playSfx === "function") playSfx("points");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   if (currentCardMeta) showInGameRatingStrip(currentCardMeta.mode, currentCardMeta.tier, currentCardMeta.cardIndex);
 }
 
@@ -1042,6 +1434,7 @@ function resetGame() {
   document.getElementById("todCard").classList.add("hidden-card");
   currentCardMeta = null;
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   showStatus("New game started 🔄");
 }
 
@@ -1088,6 +1481,7 @@ window.skipCard = function () {
   }
   updateScoreDisplay();
   endTurn();
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
 };
 
 window.drinkSkip = function () {
@@ -1101,6 +1495,7 @@ window.drinkSkip = function () {
     setTimeout(() => { toast.classList.remove("show"); }, 2000);
   }
   endTurn();
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
 };
 
 // ========================= //
@@ -1140,6 +1535,11 @@ function renderSyncedCard(mode, tier, card, cardIndex, drawnByPartner) {
   cardEl.classList.toggle("love-match", isLoveMatch);
   var loveBadge = document.getElementById("loveMatchBadge");
   if (loveBadge) loveBadge.classList.toggle("hidden", !isLoveMatch);
+  if (isLoveMatch && typeof playSfx === "function") {
+    // Timed to land alongside the shimmer sweep, once the burn-reveal
+    // has cleared and the badge is actually visible.
+    setTimeout(function () { playSfx("sparkle"); }, 1600);
+  }
 }
 
 function showTruthOrDareJudgeUI(mode, myRole) {
@@ -1180,6 +1580,7 @@ function endSyncTruthRound() {
 
 function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var tier = getSelectedTier();
   var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
   var list = getFilteredList(fullList);
@@ -1210,6 +1611,7 @@ function syncDrawCard(mode) {
 
 function restoreTruthOrDareRound(starterEvent, events) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var p = starterEvent.payload || {};
   var list = gameData[p.tier] && gameData[p.tier][p.mode === "truth" ? "truths" : "dares"];
   var card = list && list[p.cardIndex];
@@ -1270,6 +1672,7 @@ function syncSkipCard(kind) {
   }
 
   endSyncTruthRound();
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   window.GameSync.send("card_skipped", payload);
 }
 
@@ -1288,6 +1691,7 @@ function applyRemoteCardSkipped(ev) {
     }
   }
   endSyncTruthRound();
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
 }
 
 function syncAwardPoints(amount) {
@@ -1298,6 +1702,8 @@ function syncAwardPoints(amount) {
   showStatus((gameSyncPartnerName || "Partner") + " +" + amount + (round.doubleDown ? " 🔥 (Double Down!)" : " 🔥"));
   showSyncOutcome("todCard", amount > 0);
   endSyncTruthRound();
+  if (typeof playSfx === "function") playSfx("points");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   showInGameRatingStrip("dare", round.tier, round.cardIndex);
   window.GameSync.send("points_awarded", {
     roundId: round.roundId, performer_user_id: round.performerId, amount: amount, tier: round.tier, source: "truth_or_dare"
@@ -1313,6 +1719,8 @@ function syncJudgeTruth(verdict) {
   showStatus(verdict === "pass" ? ((gameSyncPartnerName || "Partner") + " +" + points + (round.doubleDown ? " 🔥 (Double Down!)" : " 🔥")) : "No points awarded 😅");
   showSyncOutcome("todCard", verdict === "pass");
   endSyncTruthRound();
+  if (typeof playSfx === "function") playSfx(verdict === "pass" ? "truthPass" : "truthFail");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   showInGameRatingStrip("truth", round.tier, round.cardIndex);
   window.GameSync.send("truth_judged", {
     roundId: round.roundId, performer_user_id: round.performerId, verdict: verdict, points: points, tier: round.tier
@@ -1332,6 +1740,8 @@ function applyRemotePointsAwarded(ev) {
   } else {
     var round = syncTruthRound;
     endSyncTruthRound();
+    if (typeof playSfx === "function") playSfx("points");
+    if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
     if (round) showInGameRatingStrip("dare", round.tier, round.cardIndex);
   }
 }
@@ -1343,6 +1753,8 @@ function applyRemoteTruthJudged(ev) {
   showSyncOutcome("todCard", p.verdict === "pass");
   var round = syncTruthRound;
   endSyncTruthRound();
+  if (typeof playSfx === "function") playSfx(p.verdict === "pass" ? "truthPass" : "truthFail");
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
   if (round) showInGameRatingStrip("truth", round.tier, round.cardIndex);
 }
 
@@ -1670,6 +2082,7 @@ window.addEventListener("load", function () {
   updateScoreDisplay();
   updateNameDisplays();
   updateDrinkModeUI();
+  if (typeof updateSoundMuteUI === "function") updateSoundMuteUI();
   if (localStorage.getItem("menuOpened") !== "true") {
     var menuBtn = document.querySelector(".menu-btn");
     if (menuBtn) menuBtn.classList.add("menu-discovery");
@@ -2060,6 +2473,7 @@ function resetSyncRoundsUI() {
   myHand = {};
   if (typeof renderCardShop === "function") renderCardShop();
   if (typeof renderHandTray === "function") renderHandTray();
+  if (typeof hideBurnOverlay === "function") hideBurnOverlay();
 }
 
 function updateConnIndicators() {
@@ -2366,6 +2780,7 @@ function applyShieldEffect(payload) {
   if (!syncTruthRound || syncTruthRound.roundId !== payload.roundId) return;
   showStatus("Shielded — no penalty this round 🛡️");
   endSyncTruthRound();
+  if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
 }
 
 function applyCardEffect(cardType, payload) {
@@ -2373,6 +2788,9 @@ function applyCardEffect(cardType, payload) {
   else if (cardType === "double_down") applyDoubleDownEffect(payload);
   else if (cardType === "shield") applyShieldEffect(payload);
   else if (cardType === "redraw" || cardType === "spice" || cardType === "wildcard") {
+    // The old card is being discarded — burn it away before the fresh
+    // one renders (restoreTruthOrDareRound clears the overlay itself).
+    if (typeof triggerCardBurnAway === "function") triggerCardBurnAway();
     restoreTruthOrDareRound({ payload: payload });
   }
 }
@@ -2386,6 +2804,7 @@ function showCardAnnouncement(playerName, cardType) {
   banner.classList.remove("hidden");
   void banner.offsetWidth;
   banner.classList.add("card-announcement-show");
+  if (typeof playSfx === "function") playSfx("cardPlayed");
   setTimeout(function () {
     banner.classList.remove("card-announcement-show");
     banner.classList.add("hidden");

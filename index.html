@@ -332,6 +332,7 @@
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
   <a onclick="updateNames()">Update Names&nbsp;✏️</a>
+  <a onclick="toggleSoundMute()" id="soundMuteToggle">🔊 Sound On</a>
   <a onclick="showPage('account')" id="menuAuthLink">Account&nbsp;👤</a>
   <a href="feedback.html">Beta Feedback&nbsp;💬</a>
 </div>
@@ -478,6 +479,7 @@
       <div class="card-label" id="cardLabel">Truth</div>
       <span id="loveMatchBadge" class="love-match-badge hidden">💕 You both loved this</span>
       <p id="todResult"></p>
+      <div class="card-shimmer"></div>
     </div>
 
     <!-- BACK -->
@@ -487,6 +489,8 @@
     </div>
 
   </div>
+  <canvas id="burnCanvas" class="burn-canvas hidden"></canvas>
+  <div id="burnFallback" class="burn-fallback hidden"></div>
 </div>
 
 <div id="passFailSection" style="display:none; text-align:center; margin-top:15px;">
