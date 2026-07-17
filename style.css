@@ -29,7 +29,7 @@ body::before {
 }
 
 .menu-btn {
-  font-size: 30px;
+  font-size: 60px;
   cursor: pointer;
   background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
   -webkit-background-clip: text;
@@ -50,15 +50,18 @@ body::before {
   text-align: left;
   z-index: 10;
   box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
+  overflow-y: auto;
 }
 
 .menu a {
   display: block;
-  padding: 16px 20px;
+  padding: 20px 22px;
   color: #fff5f7;
   text-decoration: none;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 32px;
+  line-height: 1.25;
 }
 
 .menu a:hover {
@@ -67,10 +70,10 @@ body::before {
 }
 
 /* Menu discovery cue — first-run only, cleared permanently once the
-   user opens the menu (see toggleMenu in script.js). */
+   user opens the menu (see toggleMenu in script.js). The button's base
+   size now already reads as prominent, so first-run only adds the glow. */
 .menu-btn.menu-discovery {
   display: inline-block;
-  transform: scale(1.2);
   animation: menuDiscoveryGlow 3s ease-in-out infinite;
 }
 @keyframes menuDiscoveryGlow {
@@ -110,19 +113,19 @@ h1 {
 .home-game-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 380px;
+  gap: 18px;
+  max-width: 440px;
   margin: 0 auto;
 }
 
 .home-game-card {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 12px;
   background: linear-gradient(145deg, #1a1e24, #242a30);
   border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 16px;
-  padding: 16px 18px;
+  border-radius: 22px;
+  padding: 26px 24px;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.18s, transform 0.15s;
@@ -132,26 +135,29 @@ h1 {
   transform: translateX(3px);
 }
 
+.home-game-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .home-game-icon {
-  font-size: 28px;
+  font-size: 44px;
   line-height: 1;
   flex-shrink: 0;
 }
 
-.home-game-body { min-width: 0; }
-
 .home-game-name {
   font-family: 'Playfair Display', serif;
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 600;
   color: #c9a97a;
-  margin-bottom: 4px;
 }
 
 .home-game-desc {
-  font-size: 13px;
+  font-size: 14.5px;
   color: rgba(255,245,247,0.55);
-  line-height: 1.4;
+  line-height: 1.55;
 }
 
 h3 {
