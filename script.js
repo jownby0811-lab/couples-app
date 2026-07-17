@@ -2499,6 +2499,83 @@ function updateCardMenuVisibility() {
   }
 }
 
+// ---- closing both slide-out menus ----
+// Both menus already toggle shut on a second tap of their own hamburger
+// icon (see toggleMenu/toggleCardMenu above). This adds the remaining
+// close paths: tapping outside, swiping toward the menu's own edge on
+// touch, and Escape on desktop — all routed through the same toggle
+// functions so the close animation always matches the open one.
+
+function isLeftMenuOpen() {
+  var menu = document.getElementById("menu");
+  return !!menu && menu.style.left === "0px";
+}
+
+// Uses composedPath() rather than el.contains(e.target): a click on a
+// Buy button can trigger a synchronous re-render of the shop list before
+// this listener runs (the click handler's own DOM update flushes as a
+// microtask ahead of the next listener in the same dispatch), which
+// would detach the original e.target and make a plain .contains() check
+// report "outside" even though the click was squarely inside the menu.
+// composedPath() is captured at dispatch time and is immune to that.
+document.addEventListener("click", function (e) {
+  var path = typeof e.composedPath === "function" ? e.composedPath() : null;
+  function isInside(el) {
+    if (!el) return false;
+    return path ? path.indexOf(el) !== -1 : el.contains(e.target);
+  }
+  if (isLeftMenuOpen()) {
+    var menu = document.getElementById("menu");
+    var btn = document.querySelector(".menu-btn");
+    if (!isInside(menu) && !isInside(btn)) {
+      window.toggleMenu();
+    }
+  }
+  if (typeof cardMenuOpen !== "undefined" && cardMenuOpen) {
+    var cardMenu = document.getElementById("cardMenu");
+    var cardBtn = document.getElementById("cardMenuBtn");
+    if (!isInside(cardMenu) && !isInside(cardBtn)) {
+      window.toggleCardMenu();
+    }
+  }
+});
+
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape" && e.key !== "Esc") return;
+  if (isLeftMenuOpen()) window.toggleMenu();
+  if (typeof cardMenuOpen !== "undefined" && cardMenuOpen) window.toggleCardMenu();
+});
+
+// Swipe toward the menu's own hinge edge closes it. Listens only on the
+// menu element itself (not the whole document) so it never competes with
+// normal page scrolling, and only reacts to a clearly horizontal gesture
+// past a deliberate threshold so ordinary taps on links/buttons inside
+// the menu are completely unaffected.
+function attachSwipeToClose(menuEl, direction, isOpenFn, closeFn) {
+  if (!menuEl) return;
+  var startX = null, startY = null;
+  menuEl.addEventListener("touchstart", function (e) {
+    if (!isOpenFn() || !e.touches || e.touches.length !== 1) { startX = null; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+  menuEl.addEventListener("touchend", function (e) {
+    if (startX == null) return;
+    var touch = e.changedTouches && e.changedTouches[0];
+    var dx = touch ? touch.clientX - startX : 0;
+    var dy = touch ? touch.clientY - startY : 0;
+    startX = null; startY = null;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (direction === "left" && dx < 0 && isOpenFn()) closeFn();
+    else if (direction === "right" && dx > 0 && isOpenFn()) closeFn();
+  }, { passive: true });
+}
+
+window.addEventListener("load", function () {
+  attachSwipeToClose(document.getElementById("menu"), "left", isLeftMenuOpen, function () { window.toggleMenu(); });
+  attachSwipeToClose(document.getElementById("cardMenu"), "right", function () { return typeof cardMenuOpen !== "undefined" && cardMenuOpen; }, function () { window.toggleCardMenu(); });
+});
+
 function renderCardShop() {
   var balanceEl = document.getElementById("cardShopBalance");
   if (balanceEl) balanceEl.innerText = cardBalance.mine + " pts";

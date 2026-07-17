@@ -104,6 +104,21 @@ h1 {
   margin-top: 24px;
 }
 
+/* App name — the name itself is the hook, so it stands in wherever a
+   subtitle/tagline would otherwise go (onboarding hero, feedback page). */
+.brand-name {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 28px;
+  background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+  margin: 0 0 6px;
+}
+
 /* ========================= */
 /* HOME GAME SELECTION       */
 /* ========================= */
