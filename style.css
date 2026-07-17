@@ -124,9 +124,64 @@ h1 {
 /* HOME GAME SELECTION       */
 /* ========================= */
 
-.home-sub {
+.home-hero {
+  max-width: 480px;
+  margin: 0 auto 30px;
+  text-align: center;
+}
+
+.home-hero-title {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 42px;
+  background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 24px 0 10px;
+}
+
+.home-hero-sub {
+  font-size: 14.5px;
+  color: rgba(255,245,247,0.6);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.home-feedback-invite {
+  max-width: 440px;
+  margin: 28px auto 0;
+  padding: 16px 20px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.02);
+}
+
+.home-feedback-invite-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #c9a97a;
+  margin: 0 0 6px;
+}
+
+.home-feedback-invite-text {
+  font-size: 13px;
   color: rgba(255,245,247,0.55);
-  margin: 0 0 18px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.home-feedback-invite-text a {
+  color: #c9a97a;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.home-feedback-invite-text a:hover {
+  color: #d8bd94;
 }
 
 .home-game-grid {

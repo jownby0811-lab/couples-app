@@ -1491,10 +1491,23 @@ function sfxNoiseBurst(ctx, startAt, duration, opts) {
 }
 
 var SFX_BUILDERS = {
-  // Card draw — soft slide/snap.
+  // Card draw — ignition: a quick match-strike catching into a brief
+  // sizzle/crackle, echoing the burn reveal's fire timbre but compact
+  // and front-loaded so it reads as the moment the card catches.
   draw: function (ctx, t0) {
-    sfxNoiseBurst(ctx, t0, 0.09, { filterType: "highpass", filterFreq: 1800, gain: 0.10, attack: 0.005 });
-    sfxTone(ctx, 260, t0, 0.09, { type: "triangle", freqEnd: 90, gain: 0.10, attack: 0.004 });
+    // Strike: a short, bright scratchy transient.
+    sfxNoiseBurst(ctx, t0, 0.05, { filterType: "highpass", filterFreq: 2600, gain: 0.09, attack: 0.003 });
+    // Catch: a brief sizzle sweeping down as the flame takes hold.
+    sfxNoiseBurst(ctx, t0 + 0.02, 0.26, { filterType: "bandpass", filterFreq: 3200, filterFreqEnd: 900, q: 0.8, gain: 0.10, attack: 0.01 });
+    // A few tiny crackle pops woven through the catch.
+    var pops = 3;
+    for (var i = 0; i < pops; i++) {
+      var at = t0 + 0.03 + Math.random() * 0.22;
+      sfxNoiseBurst(ctx, at, 0.015 + Math.random() * 0.015, {
+        filterType: "lowpass", filterFreq: 1000 + Math.random() * 600,
+        gain: 0.05 + Math.random() * 0.03, attack: 0.002
+      });
+    }
   },
   // Reveal — subtle whoosh.
   reveal: function (ctx, t0) {
