@@ -321,7 +321,13 @@
 
   <div class="topbar">
   <span class="menu-btn" onclick="toggleMenu()">☰</span>
+  <span class="topbar-wordmark">Dare We?</span>
   <span class="card-menu-btn hidden" id="cardMenuBtn" onclick="toggleCardMenu()">🃏</span>
+</div>
+
+<div id="installNudge" class="install-nudge hidden">
+  <span id="installNudgeText" class="install-nudge-text"></span>
+  <button class="install-nudge-dismiss" onclick="dismissInstallNudge()" aria-label="Dismiss">✕</button>
 </div>
 
 <div id="menu" class="menu">
@@ -396,45 +402,79 @@
 </div>
 
 <div id="home" class="section active">
+  <div class="home-ambient" aria-hidden="true">
+    <span class="home-ember e1"></span>
+    <span class="home-ember e2"></span>
+    <span class="home-ember e3"></span>
+    <span class="home-petal p1"></span>
+    <span class="home-petal p2"></span>
+    <span class="home-petal p3"></span>
+  </div>
+
+  <div class="home-content">
   <div class="home-hero">
-    <h1 class="home-hero-title">Dare We?</h1>
-    <p class="home-hero-sub">A game for two: you each quietly mark what you're into, and only the overlap ever makes it into play. Discover each other, dare each other, and keep score as the night goes on.</p>
+    <h1 class="home-hero-title" id="homeHeroTitle">Discover each other. Dare each other.</h1>
+    <p class="home-hero-sub" id="homeHeroSub">Every answer is private. Only what you're both into ever becomes playable.</p>
+    <button class="home-hero-cta" id="homeHeroCta">Start Playing — Free</button>
+  </div>
+
+  <div class="home-trust-strip">🛡 Private ratings · 💕 Mutual matches only · 📱 Play together on your own phones.</div>
+
+  <div class="home-current-game hidden" id="homeCurrentGame">
+    <div class="home-current-game-label">Current Game</div>
+    <div class="home-current-game-scores">
+      <div class="home-current-game-score">
+        <span class="home-current-game-score-name" id="homeScoreMineLabel">You</span>
+        <span class="home-current-game-score-val" id="homeScoreMine">0</span>
+      </div>
+      <div class="home-current-game-score">
+        <span class="home-current-game-score-name" id="homeScorePartnerLabel">Partner</span>
+        <span class="home-current-game-score-val" id="homeScorePartner">0</span>
+      </div>
+    </div>
+    <button class="home-current-game-btn" onclick="showPage('truth')">Continue Truth or Dare →</button>
   </div>
 
   <div class="home-game-grid">
-    <div class="home-game-card" onclick="showPage('truth')">
+    <div class="home-game-card home-game-card-featured" onclick="showPage('truth')">
+      <span class="home-game-chip">Start here 🔥</span>
       <div class="home-game-header">
         <span class="home-game-icon">🎲</span>
         <div class="home-game-name">Truth or Dare</div>
       </div>
-      <div class="home-game-desc">Draw truth or dare cards tailored to what you're both into. Take turns pulling a card, performing (or confessing), and awarding each other points. It's playful, a little competitive, and gets more interesting with every round.</div>
+      <div class="home-game-desc">Private truth and dare cards built from what you're both into.</div>
     </div>
     <div class="home-game-card" onclick="showPage('positions')">
       <div class="home-game-header">
         <span class="home-game-icon">🔥</span>
         <div class="home-game-name">Positions</div>
       </div>
-      <div class="home-game-desc">A browsable library of positions to try, sorted by category, difficulty, and vibe. Explore it together, mark your favorites, and rate the ones you're curious about. Anything you're both into gets flagged as a match — no awkward conversation required.</div>
+      <div class="home-game-desc">Explore together; rate privately; find your matches.</div>
     </div>
     <div class="home-game-card" onclick="showPage('wheel')">
       <div class="home-game-header">
         <span class="home-game-icon">🎡</span>
         <div class="home-game-name">Spin the Wheel</div>
       </div>
-      <div class="home-game-desc">One spin, one activity — kissing, teasing, a position, or something dirtier depending on the tier. Take turns spinning and follow wherever it lands. Fast, a little unpredictable, and always keeps things spontaneous.</div>
+      <div class="home-game-desc">Let fate decide what's next.</div>
     </div>
     <div class="home-game-card" onclick="showPage('personalize')">
       <div class="home-game-header">
         <span class="home-game-icon">💌</span>
         <div class="home-game-name">Personalize</div>
       </div>
-      <div class="home-game-desc">Rate every truth and dare so the deck learns what you're actually into. Mark what's a no, a maybe, a yes, or an absolute love — privately, just for you. The more you rate, the better every future round gets.</div>
+      <div class="home-game-desc">Teach the deck what you love.</div>
     </div>
   </div>
 
   <div class="home-feedback-invite">
     <div class="home-feedback-invite-title">Help shape Dare We?</div>
     <p class="home-feedback-invite-text">Got a thought, a bug, or something you wish it did? <a href="feedback.html">Tell us</a> — it goes straight to the people building it.</p>
+  </div>
+
+  <footer class="site-footer">
+    <span class="site-footer-brand">Dare We?</span> · <a href="mailto:hello@darewe.app">hello@darewe.app</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a>
+  </footer>
   </div>
 </div>
 
