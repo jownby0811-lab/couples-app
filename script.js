@@ -14,6 +14,7 @@ window.showPage = function (pageId) {
   if (pageId === "truth" && typeof refreshAllPreferenceCaches === "function") {
     updateMatchedOnlyUI();
     refreshAllPreferenceCaches();
+    if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
   }
   if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
     resizeWheelCanvas();
@@ -1620,7 +1621,7 @@ function getDare() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getSelectedTier();
-  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly });
+  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
   let fullList = pool.fullList;
   let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
@@ -1742,6 +1743,7 @@ function endTurn() {
   document.getElementById("skipSection").style.display = "none";
   currentPlayer = currentPlayer === "john" ? "felicity" : "john";
   updateTurnDisplay();
+  if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
 }
 
 function resetGame() {
@@ -1905,13 +1907,14 @@ function endSyncTruthRound() {
   if (skipSection) skipSection.style.display = "none";
   if (label) label.classList.add("hidden");
   if (typeof renderHandTray === "function") renderHandTray();
+  if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
 }
 
 function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var tier = getSelectedTier();
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) {
@@ -2149,10 +2152,250 @@ function updateMatchedOnlyUI() {
   btn.classList.toggle("active-drink-mode", matchedOnly);
 }
 
+// ========================= //
+// PROGRESSION (tag unlocks) //
+// ========================= //
+// Couples start with the base/vanilla tag set always available. Every
+// other ("advanced") tag has to be mutually unlocked together — a
+// "Dare we try [tag]?" proposal both partners answer yes to — before
+// its dares enter the pool. Solo/unlinked players are entirely
+// unaffected: they never see a restricted pool, a proposal, or a
+// locked/unlocked distinction. All state here comes from the existing
+// get_couple_progression/create_progression_proposal/respond_progression
+// RPCs (backend.js) — no schema changes, no new realtime channel.
+//
+// Privacy: my_answer from the backend is always the caller's own
+// response only. Nothing here ever renders who proposed, whether the
+// partner has answered, or what they answered — an unanswered proposal
+// and a declined one look identical (both just "not open" once resolved,
+// or "asked 💌" while still open).
+
+// The vanilla baseline — always playable regardless of unlock state.
+// Everything else appearing in gameData's dare tags is "advanced" by
+// exclusion, so new content tags default to locked until added here.
+var BASE_TAGS = [
+  "kissing", "massage", "praise", "dirty-talk", "teasing", "grinding",
+  "strip", "mirror", "roleplay", "manual", "oral", "penetration"
+];
+
+var coupleProgression = { progressionMode: null, unlockedTags: [], openProposals: [] };
+var activeProgressionPromptId = null;
+var activeProgressionPromptTag = null;
+
+function getAllDareTags() {
+  var set = {};
+  TIER_ORDER.forEach(function (tier) {
+    gameData[tier].dares.forEach(function (d) { (d.tags || []).forEach(function (t) { set[t] = true; }); });
+  });
+  return Object.keys(set).sort();
+}
+
+function getAdvancedTags() {
+  return getAllDareTags().filter(function (t) { return BASE_TAGS.indexOf(t) === -1; });
+}
+
+// The full allow-list passed to window.Pool.getPlayablePool's
+// unlockedTags param — null (no restriction) for solo/unlinked users,
+// exactly preserving their pre-progression behavior.
+function getAllowedTagsForPool() {
+  if (!isSyncActive()) return null;
+  return BASE_TAGS.concat(coupleProgression.unlockedTags || []);
+}
+
+async function refreshCoupleProgression() {
+  if (!isSyncActive() || !window.Backend) {
+    coupleProgression = { progressionMode: null, unlockedTags: [], openProposals: [] };
+  } else {
+    coupleProgression = await window.Backend.getCoupleProgression();
+  }
+  if (typeof renderProgressionTagSections === "function") renderProgressionTagSections();
+  if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
+}
+
+// Propose unlocking a tag together — idempotent server-side, so calling
+// this again for a tag that already has an open proposal just reuses it.
+function proposeTag(tag) {
+  if (!window.Backend || !isSyncActive()) return;
+  window.Backend.createProgressionProposal("tag", tag)
+    .then(function () { return refreshCoupleProgression(); })
+    .catch(function (e) {
+      var err = document.getElementById("progressionError");
+      if (err) err.innerText = (e && e.message) || "Couldn't send that. Please try again.";
+    });
+}
+
+// Truth or Dare only ever shows the prompt between rounds — never over
+// an active card, judgment, or power-card moment.
+function isTruthOrDareIdle() {
+  if (isSyncActive()) return !syncTruthRound;
+  var card = document.getElementById("todCard");
+  var passFail = document.getElementById("passFailSection");
+  var pointSection = document.getElementById("pointSection");
+  var skipSection = document.getElementById("skipSection");
+  return (!card || card.classList.contains("hidden-card")) &&
+    (!passFail || passFail.style.display === "none") &&
+    (!pointSection || pointSection.style.display === "none") &&
+    (!skipSection || skipSection.style.display === "none");
+}
+
+function maybeShowProgressionPrompt() {
+  var truthEl = document.getElementById("progressionPromptTruth");
+  var personalizeEl = document.getElementById("progressionPromptPersonalize");
+  if (!truthEl && !personalizeEl) return;
+
+  var openUnanswered = (coupleProgression.openProposals || []).find(function (p) {
+    return p.kind === "tag" && p.myAnswer == null;
+  });
+
+  activeProgressionPromptId = openUnanswered ? openUnanswered.id : null;
+  activeProgressionPromptTag = openUnanswered ? openUnanswered.subject : null;
+
+  if (truthEl) {
+    var truthPage = document.getElementById("truth");
+    var truthPageActive = truthPage && truthPage.classList.contains("active");
+    var showInTruth = !!openUnanswered && isSyncActive() && truthPageActive && isTruthOrDareIdle();
+    if (showInTruth) {
+      document.getElementById("progressionPromptTagTruth").innerText = openUnanswered.subject.replace(/-/g, " ");
+      truthEl.classList.remove("hidden");
+    } else {
+      truthEl.classList.add("hidden");
+    }
+  }
+
+  if (personalizeEl) {
+    var showInPersonalize = !!openUnanswered && isSyncActive();
+    if (showInPersonalize) {
+      document.getElementById("progressionPromptTagPersonalize").innerText = openUnanswered.subject.replace(/-/g, " ");
+      personalizeEl.classList.remove("hidden");
+    } else {
+      personalizeEl.classList.add("hidden");
+    }
+  }
+}
+
+// "Not yet" and "Yes" both flow through here — dismissal is immediate
+// and quiet either way; only a mutual "yes" (the RPC returning
+// 'unlocked') additionally plays the unlock ceremony.
+window.respondToProgressionPrompt = function (answer) {
+  if (!activeProgressionPromptId || !window.Backend) return;
+  var id = activeProgressionPromptId;
+  var tag = activeProgressionPromptTag;
+  activeProgressionPromptId = null;
+  activeProgressionPromptTag = null;
+  var truthEl = document.getElementById("progressionPromptTruth");
+  var personalizeEl = document.getElementById("progressionPromptPersonalize");
+  if (truthEl) truthEl.classList.add("hidden");
+  if (personalizeEl) personalizeEl.classList.add("hidden");
+  window.Backend.respondProgression(id, answer).then(function (result) {
+    if (result === "unlocked" && typeof playTagUnlockCeremony === "function") playTagUnlockCeremony(tag);
+    return refreshCoupleProgression();
+  }).catch(function () {
+    // Low-stakes — if it didn't actually go through, the proposal simply
+    // resurfaces on the next progression refresh.
+  });
+};
+
+// ---- Locked/Unlocked sections (Personalize page) ----
+
+function renderProgressionTagSections() {
+  var section = document.getElementById("progressionSection");
+  if (!section) return;
+  if (!isSyncActive()) { section.classList.add("hidden"); return; }
+  section.classList.remove("hidden");
+
+  var advanced = getAdvancedTags();
+  var unlockedSet = {};
+  (coupleProgression.unlockedTags || []).forEach(function (t) { unlockedSet[t] = true; });
+  var openProposalByTag = {};
+  (coupleProgression.openProposals || []).forEach(function (p) {
+    if (p.kind === "tag") openProposalByTag[p.subject] = p;
+  });
+
+  var unlocked = advanced.filter(function (t) { return unlockedSet[t]; });
+  var locked = advanced.filter(function (t) { return !unlockedSet[t]; });
+
+  var unlockedBlock = document.getElementById("progressionUnlockedBlock");
+  var unlockedList = document.getElementById("progressionUnlockedList");
+  if (unlocked.length) {
+    unlockedBlock.classList.remove("hidden");
+    unlockedList.innerHTML = unlocked.map(function (t) {
+      return "<span class=\"progression-tag progression-tag-unlocked\">" + escapeHtml(t.replace(/-/g, " ")) + "</span>";
+    }).join("");
+  } else {
+    unlockedBlock.classList.add("hidden");
+  }
+
+  var lockedBlock = document.getElementById("progressionLockedBlock");
+  var lockedList = document.getElementById("progressionLockedList");
+  if (locked.length) {
+    lockedBlock.classList.remove("hidden");
+    lockedList.innerHTML = "";
+    locked.forEach(function (t) {
+      var proposal = openProposalByTag[t];
+      var row = document.createElement("div");
+      row.className = "progression-locked-row";
+      row.innerHTML =
+        "<span class=\"progression-tag\">" + escapeHtml(t.replace(/-/g, " ")) + "</span>" +
+        (proposal
+          ? "<span class=\"progression-asked-badge\">asked 💌</span>"
+          : "<button type=\"button\" class=\"progression-propose-btn\">Dare we try this? 🔥</button>");
+      if (!proposal) {
+        row.querySelector(".progression-propose-btn").onclick = (function (tag) {
+          return function () { proposeTag(tag); };
+        })(t);
+      }
+      lockedList.appendChild(row);
+    });
+  } else {
+    lockedBlock.classList.add("hidden");
+  }
+}
+
+// ---- Unlock ceremony ----
+// Fires on the local device the instant its own respond call resolves
+// to 'unlocked' (regardless of which page it's on), and on the
+// partner's device via the realtime tag_unlocked game event — see
+// handleGameEvent. Reuses the burn/fire sound language already
+// established for card reveals.
+
+var tagUnlockCeremonyTimer = null;
+
+function playTagUnlockCeremony(tag) {
+  var el = document.getElementById("tagUnlockCeremony");
+  if (!el || !tag) return;
+  var textEl = document.getElementById("tagUnlockCeremonyTag");
+  if (textEl) textEl.innerText = tag.replace(/-/g, " ");
+  el.classList.remove("hidden");
+  el.classList.remove("tag-unlock-ceremony-play");
+  void el.offsetWidth; // restart the CSS animation if it's already mid-play
+  el.classList.add("tag-unlock-ceremony-play");
+  if (typeof playSfx === "function") playSfx("sparkle");
+  if (tagUnlockCeremonyTimer) clearTimeout(tagUnlockCeremonyTimer);
+  tagUnlockCeremonyTimer = setTimeout(dismissTagUnlockCeremony, 3200);
+}
+
+function dismissTagUnlockCeremony() {
+  var el = document.getElementById("tagUnlockCeremony");
+  if (el) {
+    el.classList.add("hidden");
+    el.classList.remove("tag-unlock-ceremony-play");
+  }
+  if (tagUnlockCeremonyTimer) { clearTimeout(tagUnlockCeremonyTimer); tagUnlockCeremonyTimer = null; }
+}
+window.dismissTagUnlockCeremony = dismissTagUnlockCeremony;
+
+function applyRemoteTagUnlocked(ev) {
+  var tag = (ev.payload || {}).tag;
+  if (!tag) return;
+  playTagUnlockCeremony(tag);
+  refreshCoupleProgression();
+}
+
 // ---- Personalize page ----
 
 async function initPersonalizePage() {
   await refreshAllPreferenceCaches();
+  await refreshCoupleProgression();
   renderPersonalizeTagChips();
   renderPersonalizeList();
 }
@@ -2856,6 +3099,7 @@ function handleGameBackendChange() {
   reconcileGameSyncSubscription();
   if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
   if (typeof refreshAllPreferenceCaches === "function") refreshAllPreferenceCaches();
+  if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
   if (typeof renderHomeHero === "function") renderHomeHero();
   if (typeof renderHomeCurrentGame === "function") renderHomeCurrentGame();
 }
@@ -2872,6 +3116,7 @@ function handleGameEvent(ev) {
     case "wheel_spun": applyRemoteWheelSpun(ev); break;
     case "points_spent": applyRemotePointsSpent(ev); break;
     case "card_played": applyRemoteCardPlayed(ev); break;
+    case "tag_unlocked": applyRemoteTagUnlocked(ev); break;
   }
 }
 
@@ -3180,7 +3425,7 @@ function buildShieldPayload() {
 function buildRedrawPayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
   var mode = syncTruthRound.mode, tier = syncTruthRound.tier;
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No fresh cards available to redraw 😅"); return null; }
@@ -3193,7 +3438,7 @@ function buildSpicePayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer" || syncTruthRound.mode !== "dare") return null;
   var curIdx = TIER_ORDER.indexOf(syncTruthRound.tier);
   var newTier = (curIdx >= 0 && curIdx < TIER_ORDER.length - 1) ? TIER_ORDER[curIdx + 1] : TIER_ORDER[TIER_ORDER.length - 1];
-  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly });
+  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No cards available at that tier 😅"); return null; }
@@ -3207,7 +3452,8 @@ function buildSpicePayload() {
 // of every card effect's preference-sovereignty requirement.
 function getWildcardPool(tier) {
   var pool = window.Pool.getPlayablePool({
-    mode: "dare", tier: tier, matchedOnly: true, matchedOnlyStrict: true, respectGender: false
+    mode: "dare", tier: tier, matchedOnly: true, matchedOnlyStrict: true, respectGender: false,
+    unlockedTags: getAllowedTagsForPool()
   });
   return pool.items.map(function (card) {
     return { card: card, cardIndex: pool.fullList.indexOf(card) };
@@ -4203,7 +4449,8 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
     }
     if (!dare) {
       var darePool = window.Pool.getPlayablePool({
-        mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag
+        mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
+        unlockedTags: getAllowedTagsForPool()
       });
       dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     }
@@ -4323,7 +4570,8 @@ function syncSpin() {
     forcedCard.positionId = pos.id;
   } else {
     var darePool = window.Pool.getPlayablePool({
-      mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag
+      mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
+      unlockedTags: getAllowedTagsForPool()
     });
     var dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     forcedCard.cardIndex = darePool.fullList.indexOf(dare);
