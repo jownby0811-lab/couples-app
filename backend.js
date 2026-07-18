@@ -403,6 +403,58 @@
     }
   }
 
+  // ---- Progression (tag unlocks) ----
+  // Mirrors the shape of get_couple_progression()'s TABLE result: one row
+  // per currently-open proposal (there can be more than one — e.g. two
+  // different tags proposed at once — plus always at least one row with
+  // null proposal fields when nothing is open), so this normalizes it
+  // into { progressionMode, unlockedTags, openProposals: [...] }.
+  // my_answer is always the CALLER's own response only — the RPC never
+  // returns anything about the partner's answer or who proposed.
+
+  async function getCoupleProgression() {
+    if (!client || !state.session || !isLinked()) {
+      return { progressionMode: null, unlockedTags: [], openProposals: [] };
+    }
+    try {
+      var { data, error } = await client.rpc("get_couple_progression");
+      if (error) throw error;
+      var rows = data || [];
+      if (!rows.length) return { progressionMode: null, unlockedTags: [], openProposals: [] };
+      var openProposals = rows
+        .filter(function (r) { return r.open_proposal_id; })
+        .map(function (r) {
+          return { id: r.open_proposal_id, kind: r.open_proposal_kind, subject: r.open_proposal_subject, myAnswer: r.my_answer };
+        });
+      return {
+        progressionMode: rows[0].progression_mode,
+        unlockedTags: rows[0].unlocked_tags || [],
+        openProposals: openProposals
+      };
+    } catch (e) {
+      console.warn("Failed to load couple progression", e);
+      return { progressionMode: null, unlockedTags: [], openProposals: [] };
+    }
+  }
+
+  // Idempotent per open (couple, kind, subject) — calling this again for
+  // the same still-open tag proposal just returns the existing id.
+  async function createProgressionProposal(kind, subject) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { data, error } = await client.rpc("create_progression_proposal", { p_kind: kind, p_subject: subject });
+    if (error) throw new Error(friendlyError(error, "Couldn't send that. Please try again."));
+    return data;
+  }
+
+  // Returns ONLY 'recorded' or 'unlocked' — by design, never anything
+  // that would reveal the partner's answer or whether they've answered.
+  async function respondProgression(proposalId, answer) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { data, error } = await client.rpc("respond_progression", { p_proposal: proposalId, p_answer: answer });
+    if (error) throw new Error(friendlyError(error, "Couldn't record your answer. Please try again."));
+    return data;
+  }
+
   // ---- Power Cards (Truth or Dare) ----
   // A player's hand is a private table (RLS: user_id = auth.uid()), never
   // readable by their partner. buy_card/play_card are atomic RPCs — the
@@ -463,6 +515,9 @@
     saveRating: saveRating,
     loadRatings: loadRatings,
     getMutualMatches: getMutualMatches,
+    getCoupleProgression: getCoupleProgression,
+    createProgressionProposal: createProgressionProposal,
+    respondProgression: respondProgression,
     loadHand: loadHand,
     buyCard: buyCard,
     playCard: playCard
