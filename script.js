@@ -842,16 +842,8 @@ function getCardGender(card) {
   return [String(rawGender).toLowerCase()];
 }
 
-function getFilteredList(list) {
-  return list.filter(card => {
-    let genders = getCardGender(card);
-    if (currentPlayer === "john") {
-      return genders.includes("male") || genders.includes("neutral");
-    } else {
-      return genders.includes("female") || genders.includes("neutral");
-    }
-  });
-}
+// Gender filtering moved into pool.js (window.Pool.getPlayablePool) —
+// see filterByGender there.
 
 function animateCardText(randomText) {
   let text = document.getElementById("todResult");
@@ -1600,8 +1592,9 @@ function getTruth() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("truth"); return; }
   let tier = getSelectedTier();
-  let fullList = gameData[tier].truths;
-  let list = getFilteredList(fullList);
+  let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly });
+  let fullList = pool.fullList;
+  let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
   let randomCard = list[Math.floor(Math.random() * list.length)];
   currentCardMeta = { mode: "truth", tier: tier, cardIndex: fullList.indexOf(randomCard) };
@@ -1627,8 +1620,9 @@ function getDare() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getSelectedTier();
-  let fullList = gameData[tier].dares;
-  let list = getFilteredList(fullList);
+  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly });
+  let fullList = pool.fullList;
+  let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
   let randomCard = list[Math.floor(Math.random() * list.length)];
   currentCardMeta = { mode: "dare", tier: tier, cardIndex: fullList.indexOf(randomCard) };
@@ -1917,9 +1911,9 @@ function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var tier = getSelectedTier();
-  var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
-  var list = getFilteredList(fullList);
-  list = applyPreferenceFilter(list, tier, fullList, mode);
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly });
+  var fullList = pool.fullList;
+  var list = pool.items;
   if (list.length === 0) {
     if (matchedOnly) {
       showStatus("No mutual " + mode + " matches yet — rate some together, or turn off Matched Only 💔");
@@ -2138,21 +2132,8 @@ async function refreshAllPreferenceCaches() {
   await refreshItemMutualMatches("truth");
 }
 
-// Only ever narrows the deck for couple-linked users — logged-out or
-// unlinked players keep the exact original unfiltered deck.
-function applyPreferenceFilter(list, tier, fullList, itemType) {
-  if (!isSyncActive()) return list;
-  if (matchedOnly) {
-    return list.filter(function (card) {
-      var idx = fullList.indexOf(card);
-      return Object.prototype.hasOwnProperty.call(itemMutualMatches[itemType], tierItemId(tier, idx));
-    });
-  }
-  return list.filter(function (card) {
-    var idx = fullList.indexOf(card);
-    return itemRatings[itemType][tierItemId(tier, idx)] !== "no";
-  });
-}
+// Preference/Matched Only filtering moved into pool.js
+// (window.Pool.getPlayablePool) — see filterByPreference there.
 
 window.toggleMatchedOnly = function () {
   matchedOnly = !matchedOnly;
@@ -3199,8 +3180,9 @@ function buildShieldPayload() {
 function buildRedrawPayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
   var mode = syncTruthRound.mode, tier = syncTruthRound.tier;
-  var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
-  var list = applyPreferenceFilter(getFilteredList(fullList), tier, fullList, mode);
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly });
+  var fullList = pool.fullList;
+  var list = pool.items;
   if (list.length === 0) { showStatus("No fresh cards available to redraw 😅"); return null; }
   var randomCard = list[Math.floor(Math.random() * list.length)];
   var cardIndex = fullList.indexOf(randomCard);
@@ -3211,8 +3193,9 @@ function buildSpicePayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer" || syncTruthRound.mode !== "dare") return null;
   var curIdx = TIER_ORDER.indexOf(syncTruthRound.tier);
   var newTier = (curIdx >= 0 && curIdx < TIER_ORDER.length - 1) ? TIER_ORDER[curIdx + 1] : TIER_ORDER[TIER_ORDER.length - 1];
-  var fullList = gameData[newTier].dares;
-  var list = applyPreferenceFilter(getFilteredList(fullList), newTier, fullList, "dare");
+  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly });
+  var fullList = pool.fullList;
+  var list = pool.items;
   if (list.length === 0) { showStatus("No cards available at that tier 😅"); return null; }
   var randomCard = list[Math.floor(Math.random() * list.length)];
   var cardIndex = fullList.indexOf(randomCard);
@@ -3223,12 +3206,12 @@ function buildSpicePayload() {
 // "not rated no") — "the matched deck" — which is inherently a subset
 // of every card effect's preference-sovereignty requirement.
 function getWildcardPool(tier) {
-  var fullList = gameData[tier].dares;
-  var pool = [];
-  fullList.forEach(function (card, idx) {
-    if (itemMutualMatches.dare[tierItemId(tier, idx)] === true) pool.push({ card: card, cardIndex: idx });
+  var pool = window.Pool.getPlayablePool({
+    mode: "dare", tier: tier, matchedOnly: true, matchedOnlyStrict: true, respectGender: false
   });
-  return pool;
+  return pool.items.map(function (card) {
+    return { card: card, cardIndex: pool.fullList.indexOf(card) };
+  });
 }
 
 function applyReverseEffect(payload) {
@@ -4204,10 +4187,8 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
       pos = positionsData.filter(function (p) { return p.id === forcedCard.positionId; })[0] || null;
     }
     if (!pos) {
-      var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
-      var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
-      if (!pool.length) pool = positionsData;
-      pos = pool[Math.floor(Math.random() * pool.length)];
+      var posPool = window.Pool.getPlayablePool({ mode: "position", tier: tier });
+      pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
     }
     cardLabel.innerText = '🔀 POSITION';
     cardText.innerHTML =
@@ -4221,9 +4202,10 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
       dare = dares[forcedCard.cardIndex] || null;
     }
     if (!dare) {
-      var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
-      if (!filtered.length) filtered = dares;
-      dare = filtered[Math.floor(Math.random() * filtered.length)];
+      var darePool = window.Pool.getPlayablePool({
+        mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag
+      });
+      dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     }
     cardLabel.innerText = seg.emoji + ' ' + seg.label.toUpperCase();
     cardText.innerText = dare.text;
@@ -4336,17 +4318,15 @@ function syncSpin() {
 
   var forcedCard = { cardIndex: null, positionId: null };
   if (seg.tag === 'position') {
-    var diffMap = { tease: 'beginner', foreplay: 'intermediate', dirty: 'advanced' };
-    var pool = positionsData.filter(function (p) { return p.difficulty === diffMap[tier]; });
-    if (!pool.length) pool = positionsData;
-    var pos = pool[Math.floor(Math.random() * pool.length)];
+    var posPool = window.Pool.getPlayablePool({ mode: "position", tier: tier });
+    var pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
     forcedCard.positionId = pos.id;
   } else {
-    var dares = gameData[tier].dares;
-    var filtered = dares.filter(function (d) { return d.tags && d.tags.indexOf(seg.tag) !== -1; });
-    if (!filtered.length) filtered = dares;
-    var dare = filtered[Math.floor(Math.random() * filtered.length)];
-    forcedCard.cardIndex = dares.indexOf(dare);
+    var darePool = window.Pool.getPlayablePool({
+      mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag
+    });
+    var dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
+    forcedCard.cardIndex = darePool.fullList.indexOf(dare);
   }
 
   syncWheelRound = {
