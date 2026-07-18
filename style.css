@@ -2657,6 +2657,225 @@ hr {
   font-style: italic;
 }
 
+/* ========================= */
+/* PERSONALIZE INSIGHTS      */
+/* ========================= */
+/* Two lenses only — Me (private, rose-gold framing) and Us (shared,
+   warmer glow framing). Reuses .pos-section-title, .pos-count and the
+   card-tile language already established by .invite-code-display /
+   .progression-mode-section rather than inventing a new visual system. */
+
+#personalizeInsightsSection.hidden,
+#personalizeBrowseSection.hidden,
+#insightsMePanel.hidden,
+#insightsUsPanel.hidden {
+  display: none;
+}
+
+.insights-lens-tabs { margin: 14px auto 18px; }
+
+.insights-private-badge, .insights-celebratory-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 5px 13px;
+  border-radius: 20px;
+  margin-bottom: 16px;
+}
+
+.insights-private-badge {
+  color: rgba(255,245,247,0.55);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.insights-celebratory-badge {
+  color: #ff9fbd;
+  background: rgba(255,79,135,0.12);
+  border: 1px solid rgba(255,79,135,0.35);
+}
+
+.insights-us-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.insights-hide-toggle {
+  flex-shrink: 0;
+  border: 1px solid rgba(201,169,122,0.35);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #c9a97a;
+  background: rgba(201,169,122,0.1);
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.insights-hide-toggle.active {
+  color: #b8bcc4;
+  background: rgba(184,188,196,0.12);
+  border-color: rgba(184,188,196,0.4);
+}
+
+.insights-empty {
+  text-align: center;
+  padding: 26px 16px;
+}
+
+.insights-empty-icon { font-size: 2rem; margin-bottom: 10px; }
+
+.insights-empty-text {
+  font-size: 13.5px;
+  color: rgba(255,245,247,0.55);
+  max-width: 300px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.insights-inline-empty {
+  font-size: 12.5px;
+  color: rgba(255,245,247,0.4);
+  text-align: center;
+  padding: 10px 0 4px;
+}
+
+/* Rating breakdown bars */
+.insights-bar-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+
+.insights-bar-row {
+  display: grid;
+  grid-template-columns: 68px 1fr 26px;
+  align-items: center;
+  gap: 10px;
+}
+
+.insights-bar-label { font-size: 12.5px; color: rgba(255,245,247,0.75); }
+
+.insights-bar-track {
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+
+.insights-bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+.insights-bar-love  { background: linear-gradient(90deg, #ff4f87, #ff9fbd); }
+.insights-bar-yes   { background: linear-gradient(90deg, #c9a97a, #d2c19a); }
+.insights-bar-maybe { background: linear-gradient(90deg, #b8bcc4, #c8cdd6); }
+.insights-bar-no    { background: rgba(255,255,255,0.18); }
+
+.insights-bar-count { font-size: 12.5px; font-weight: 600; color: #c9a97a; text-align: right; }
+
+/* Ranked tag lists — top-loved (Me) and mutual-love (Us) */
+.insights-tag-rank-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+.insights-tag-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.insights-tag-rank-num {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-family: 'Playfair Display', serif;
+  font-size: 13px;
+  color: #c9a97a;
+  font-weight: 700;
+}
+
+.insights-tag-rank-name {
+  flex: 1;
+  text-transform: capitalize;
+  font-size: 13.5px;
+  color: #fff5f7;
+}
+
+.insights-tag-rank-count { flex-shrink: 0; font-size: 12px; font-weight: 600; color: #c9a97a; }
+
+/* Stat tiles — mirrors .invite-code-display's bordered-card language */
+.insights-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.insights-stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+.insights-stat-tile {
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: rgba(201,169,122,0.08);
+  border: 1px solid rgba(201,169,122,0.3);
+  text-align: center;
+}
+
+.insights-stat-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #c9a97a;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.insights-stat-value {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  background: linear-gradient(90deg, #c9a97a 0%, #c8cdd6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.insights-stat-value-small { font-size: 1.1rem; }
+
+.insights-stat-sub {
+  font-size: 10.5px;
+  color: rgba(255,79,135,0.85);
+  margin-top: 2px;
+}
+
+/* Unlocked-together timeline */
+.insights-timeline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+.insights-timeline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #1a1e24, #242a30);
+  border: 1px solid rgba(201,169,122,0.25);
+}
+
+.insights-timeline-date { font-size: 11.5px; color: rgba(255,245,247,0.5); flex-shrink: 0; }
+.insights-timeline-tag  { font-size: 13px; color: #c9a97a; text-transform: capitalize; text-align: right; }
+
+.insights-points-row {
+  display: flex;
+  justify-content: space-around;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff5f7;
+  margin-top: 4px;
+}
+
 /* ---- Session heat: tier selector row, ambiance cue, turn-up action ---- */
 /* Ambiance only, deliberately — a warm little cue next to the
    selector, never a count, bar, or "max heat" badge. */

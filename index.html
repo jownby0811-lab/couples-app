@@ -596,60 +596,77 @@
 
 <div id="personalize" class="section">
   <h1>Personalize</h1>
-  <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate truths and dares privately. Anything you mark "No" won't be drawn for you in Truth or Dare — and anything you both like shows up as a match.</p>
-
-  <div id="progressionPromptPersonalize" class="progression-prompt hidden">
-    <div class="progression-prompt-text" id="progressionPromptTextPersonalize"></div>
-    <div class="progression-prompt-actions">
-      <button type="button" class="progression-yes-btn" onclick="respondToProgressionPrompt(true)">Yes 🔥</button>
-      <button type="button" class="progression-no-btn" onclick="respondToProgressionPrompt(false)">Not yet</button>
-    </div>
-  </div>
-
-  <div id="progressionSection" class="progression-section hidden">
-    <div id="progressionUnlockedBlock" class="progression-block hidden">
-      <div class="pos-section-title">Unlocked</div>
-      <div id="progressionUnlockedList" class="progression-tag-list"></div>
-    </div>
-    <div id="progressionLockedBlock" class="progression-block hidden">
-      <div class="pos-section-title">Locked</div>
-      <div id="progressionLockedList" class="progression-tag-list"></div>
-    </div>
-    <p id="progressionError" class="auth-error"></p>
-  </div>
+  <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate truths and dares privately, and see the story your play has been building — together.</p>
 
   <div class="auth-tabs" style="max-width:340px;">
-    <button id="personalizeTabDares" class="auth-tab active" onclick="setPersonalizeTab('dare')">Dares</button>
-    <button id="personalizeTabTruths" class="auth-tab" onclick="setPersonalizeTab('truth')">Truths</button>
+    <button id="personalizeViewTabInsights" class="auth-tab active" onclick="setPersonalizeView('insights')">Insights</button>
+    <button id="personalizeViewTabBrowse" class="auth-tab" onclick="setPersonalizeView('browse')">Rate &amp; Browse</button>
   </div>
 
-  <select id="personalizeTierSelect" onchange="onPersonalizeTierChange()">
-    <option value="tease">Tease 😏</option>
-    <option value="foreplay">Foreplay 🔥</option>
-    <option value="dirty">Dirty 😈</option>
-  </select>
+  <div id="personalizeInsightsSection">
+    <div class="auth-tabs insights-lens-tabs" style="max-width:280px;">
+      <button id="insightsLensTabMe" class="auth-tab active" onclick="setInsightsLens('me')">Me 🔒</button>
+      <button id="insightsLensTabUs" class="auth-tab" onclick="setInsightsLens('us')">Us 💞</button>
+    </div>
 
-  <div class="pos-browse-list" style="margin-top:14px;">
-    <div class="pos-browse-row active" data-personalize-filter="all" onclick="setPersonalizeFilter('all')">
-      <span>All</span><span class="pos-count" id="personalizeCountAll">0</span>
-    </div>
-    <div class="pos-browse-row" data-personalize-filter="unrated" onclick="setPersonalizeFilter('unrated')">
-      <span>⬜ Unrated</span><span class="pos-count" id="personalizeCountUnrated">0</span>
-    </div>
-    <div class="pos-browse-row" data-personalize-filter="love" onclick="setPersonalizeFilter('love')">
-      <span>💕 Loved</span><span class="pos-count" id="personalizeCountLove">0</span>
-    </div>
-    <div class="pos-browse-row" data-personalize-filter="no" onclick="setPersonalizeFilter('no')">
-      <span>🚫 No</span><span class="pos-count" id="personalizeCountNo">0</span>
-    </div>
+    <div id="insightsMePanel"></div>
+    <div id="insightsUsPanel" class="hidden"></div>
   </div>
 
-  <div id="personalizeTagFilters" class="pos-filter-group">
-    <div class="pos-filter-label">Tags <span class="auth-link" style="display:inline-block;margin:0 0 0 8px;font-size:11px;" onclick="clearPersonalizeTagFilters()">Clear all</span></div>
-    <div class="pos-filter-chips" id="personalizeTagChips"></div>
-  </div>
+  <div id="personalizeBrowseSection" class="hidden">
+    <div id="progressionPromptPersonalize" class="progression-prompt hidden">
+      <div class="progression-prompt-text" id="progressionPromptTextPersonalize"></div>
+      <div class="progression-prompt-actions">
+        <button type="button" class="progression-yes-btn" onclick="respondToProgressionPrompt(true)">Yes 🔥</button>
+        <button type="button" class="progression-no-btn" onclick="respondToProgressionPrompt(false)">Not yet</button>
+      </div>
+    </div>
 
-  <div id="personalizeList" class="pos-list"></div>
+    <div id="progressionSection" class="progression-section hidden">
+      <div id="progressionUnlockedBlock" class="progression-block hidden">
+        <div class="pos-section-title">Unlocked</div>
+        <div id="progressionUnlockedList" class="progression-tag-list"></div>
+      </div>
+      <div id="progressionLockedBlock" class="progression-block hidden">
+        <div class="pos-section-title">Locked</div>
+        <div id="progressionLockedList" class="progression-tag-list"></div>
+      </div>
+      <p id="progressionError" class="auth-error"></p>
+    </div>
+
+    <div class="auth-tabs" style="max-width:340px;">
+      <button id="personalizeTabDares" class="auth-tab active" onclick="setPersonalizeTab('dare')">Dares</button>
+      <button id="personalizeTabTruths" class="auth-tab" onclick="setPersonalizeTab('truth')">Truths</button>
+    </div>
+
+    <select id="personalizeTierSelect" onchange="onPersonalizeTierChange()">
+      <option value="tease">Tease 😏</option>
+      <option value="foreplay">Foreplay 🔥</option>
+      <option value="dirty">Dirty 😈</option>
+    </select>
+
+    <div class="pos-browse-list" style="margin-top:14px;">
+      <div class="pos-browse-row active" data-personalize-filter="all" onclick="setPersonalizeFilter('all')">
+        <span>All</span><span class="pos-count" id="personalizeCountAll">0</span>
+      </div>
+      <div class="pos-browse-row" data-personalize-filter="unrated" onclick="setPersonalizeFilter('unrated')">
+        <span>⬜ Unrated</span><span class="pos-count" id="personalizeCountUnrated">0</span>
+      </div>
+      <div class="pos-browse-row" data-personalize-filter="love" onclick="setPersonalizeFilter('love')">
+        <span>💕 Loved</span><span class="pos-count" id="personalizeCountLove">0</span>
+      </div>
+      <div class="pos-browse-row" data-personalize-filter="no" onclick="setPersonalizeFilter('no')">
+        <span>🚫 No</span><span class="pos-count" id="personalizeCountNo">0</span>
+      </div>
+    </div>
+
+    <div id="personalizeTagFilters" class="pos-filter-group">
+      <div class="pos-filter-label">Tags <span class="auth-link" style="display:inline-block;margin:0 0 0 8px;font-size:11px;" onclick="clearPersonalizeTagFilters()">Clear all</span></div>
+      <div class="pos-filter-chips" id="personalizeTagChips"></div>
+    </div>
+
+    <div id="personalizeList" class="pos-list"></div>
+  </div>
 
   <div id="personalizeModal" class="pos-modal hidden">
     <div class="pos-modal-card">
