@@ -331,7 +331,7 @@
 </div>
 
 <div id="tagUnlockCeremony" class="tag-unlock-ceremony hidden" onclick="dismissTagUnlockCeremony()">
-  <div class="tag-unlock-ceremony-label">Unlocked</div>
+  <div class="tag-unlock-ceremony-label" id="tagUnlockCeremonyLabel">Unlocked</div>
   <div class="tag-unlock-ceremony-tag" id="tagUnlockCeremonyTag"></div>
 </div>
 
@@ -487,14 +487,18 @@
   <h1>Truth or Dare</h1>
   <p id="truthConnIndicator" class="conn-indicator hidden"></p>
 
-<select id="tierSelect">
-  <option value="tease">Tease 😏</option>
-  <option value="foreplay">Foreplay 🔥</option>
-  <option value="dirty">Dirty 😈</option>
-</select>
+<div class="heat-tier-row">
+  <select id="tierSelect">
+    <option value="tease">Tease 😏</option>
+    <option value="foreplay">Foreplay 🔥</option>
+    <option value="dirty">Dirty 😈</option>
+  </select>
+  <span id="heatAmbianceTruth" class="heat-ambiance hidden"></span>
+</div>
+<button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat? 🔥</button>
 
 <br>
-  
+
   <h3 style="text-align:center;">
   <span id="player1Label">Him</span> 😎: <span id="johnScoreDisplay">0</span> 🔥 |
   <span id="player2Label">Her</span> 💕: <span id="felicityScoreDisplay">0</span> 🔥
@@ -508,7 +512,7 @@
   <p class="auth-link" onclick="showPage('personalize')">Personalize 💌</p>
 
   <div id="progressionPromptTruth" class="progression-prompt hidden">
-    <div class="progression-prompt-text">Dare we try <span id="progressionPromptTagTruth" class="progression-prompt-tag"></span>?</div>
+    <div class="progression-prompt-text" id="progressionPromptTextTruth"></div>
     <div class="progression-prompt-actions">
       <button type="button" class="progression-yes-btn" onclick="respondToProgressionPrompt(true)">Yes 🔥</button>
       <button type="button" class="progression-no-btn" onclick="respondToProgressionPrompt(false)">Not yet</button>
@@ -595,7 +599,7 @@
   <p class="auth-sub" style="max-width:380px;margin:0 auto 16px;">Rate truths and dares privately. Anything you mark "No" won't be drawn for you in Truth or Dare — and anything you both like shows up as a match.</p>
 
   <div id="progressionPromptPersonalize" class="progression-prompt hidden">
-    <div class="progression-prompt-text">Dare we try <span id="progressionPromptTagPersonalize" class="progression-prompt-tag"></span>?</div>
+    <div class="progression-prompt-text" id="progressionPromptTextPersonalize"></div>
     <div class="progression-prompt-actions">
       <button type="button" class="progression-yes-btn" onclick="respondToProgressionPrompt(true)">Yes 🔥</button>
       <button type="button" class="progression-no-btn" onclick="respondToProgressionPrompt(false)">Not yet</button>
@@ -766,11 +770,15 @@
   <h1>Spin the Wheel</h1>
   <p id="wheelConnIndicator" class="conn-indicator hidden"></p>
 
-  <select id="wheelTierSelect" onchange="wheelTierChanged()">
-    <option value="tease">Tease 😏</option>
-    <option value="foreplay">Foreplay 🔥</option>
-    <option value="dirty">Dirty 😈</option>
-  </select>
+  <div class="heat-tier-row">
+    <select id="wheelTierSelect" onchange="wheelTierChanged()">
+      <option value="tease">Tease 😏</option>
+      <option value="foreplay">Foreplay 🔥</option>
+      <option value="dirty">Dirty 😈</option>
+    </select>
+    <span id="heatAmbianceWheel" class="heat-ambiance hidden"></span>
+  </div>
+  <button type="button" id="turnUpHeatBtnWheel" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat? 🔥</button>
 
   <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
   <p id="wheelScoreDisplay" class="wheel-score-display hidden"></p>

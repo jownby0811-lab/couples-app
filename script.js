@@ -15,10 +15,14 @@ window.showPage = function (pageId) {
     updateMatchedOnlyUI();
     refreshAllPreferenceCaches();
     if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
+    if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+    if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
   }
   if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
     resizeWheelCanvas();
     drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+    if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+    if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
   }
   if (pageId === "home" && typeof initHomePage === "function") {
     initHomePage();
@@ -1593,7 +1597,7 @@ function getTruth() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("truth"); return; }
   let tier = getSelectedTier();
-  let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly });
+  let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly, heatCeiling: getHeatCeilingForPool() });
   let fullList = pool.fullList;
   let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
@@ -1621,7 +1625,7 @@ function getDare() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getSelectedTier();
-  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
+  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   let fullList = pool.fullList;
   let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
@@ -1914,7 +1918,7 @@ function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var tier = getSelectedTier();
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) {
@@ -2181,6 +2185,77 @@ var BASE_TAGS = [
 var coupleProgression = { progressionMode: null, unlockedTags: [], openProposals: [] };
 var activeProgressionPromptId = null;
 var activeProgressionPromptTag = null;
+var activeProgressionPromptKind = null; // 'tag' | 'heat'
+
+// Session heat ceiling — synced couples only. "tease" mirrors
+// TIER_ORDER[0]; kept as a literal here since TIER_ORDER is declared
+// later in the file (this line runs at top-level script execution,
+// before that declaration would exist — unlike the function bodies
+// below, which only read TIER_ORDER lazily when called).
+var sessionHeatCeiling = "tease";
+
+// The heatCeiling passed to window.Pool.getPlayablePool — null (no
+// restriction) for solo/unlinked users, so their pool is byte-identical
+// to before this feature existed.
+function getHeatCeilingForPool() {
+  if (!isSyncActive()) return null;
+  return sessionHeatCeiling;
+}
+
+// The tier dropdowns become "pick within what's unlocked" for synced
+// couples; solo/unlinked users keep every option enabled, exactly as
+// today. Also clamps the current selection down if it's now above the
+// ceiling (e.g. right after reconnecting into a fresh, lower-heat
+// session).
+function updateTierSelectOptions() {
+  var ceiling = getHeatCeilingForPool();
+  var ceilingIdx = ceiling ? TIER_ORDER.indexOf(ceiling) : TIER_ORDER.length - 1;
+  [document.getElementById("tierSelect"), document.getElementById("wheelTierSelect")].forEach(function (sel) {
+    if (!sel) return;
+    Array.prototype.forEach.call(sel.options, function (opt) {
+      opt.disabled = TIER_ORDER.indexOf(opt.value) > ceilingIdx;
+    });
+    if (TIER_ORDER.indexOf(sel.value) > ceilingIdx) {
+      sel.value = TIER_ORDER[ceilingIdx];
+    }
+  });
+}
+
+// "Turn up the heat?" is hidden entirely for solo/unlinked users and
+// once the session is already at max heat — there's nothing left to
+// propose. While an open heat proposal exists, it reads as answered-
+// already-asked (identical regardless of who proposed it), same as a
+// locked tag's "asked 💌" badge.
+function updateTurnUpHeatButtons() {
+  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
+  var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
+  [document.getElementById("turnUpHeatBtnTruth"), document.getElementById("turnUpHeatBtnWheel")].forEach(function (btn) {
+    if (!btn) return;
+    if (!isSyncActive() || atMax) {
+      btn.classList.add("hidden");
+      return;
+    }
+    btn.classList.remove("hidden");
+    btn.disabled = hasOpenHeatProposal;
+    btn.innerText = hasOpenHeatProposal ? "Asked 💌" : "Turn up the heat? 🔥";
+  });
+}
+
+// Ambiance only — the current tier shown as a warm little cue next to
+// the selector, never a rank, count, or progress-toward-hotter framing.
+var TIER_AMBIANCE_LABEL = { tease: "Tease 😏", foreplay: "Foreplay 🔥", dirty: "Dirty 😈" };
+
+function updateHeatAmbianceUI() {
+  updateTurnUpHeatButtons();
+  var synced = isSyncActive();
+  [document.getElementById("heatAmbianceTruth"), document.getElementById("heatAmbianceWheel")].forEach(function (el) {
+    if (!el) return;
+    if (!synced) { el.classList.add("hidden"); return; }
+    el.innerText = "🕯 " + (TIER_AMBIANCE_LABEL[sessionHeatCeiling] || sessionHeatCeiling);
+    el.classList.remove("hidden");
+  });
+}
 
 function getAllDareTags() {
   var set = {};
@@ -2210,6 +2285,7 @@ async function refreshCoupleProgression() {
   }
   if (typeof renderProgressionTagSections === "function") renderProgressionTagSections();
   if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
 }
 
 // Propose unlocking a tag together — idempotent server-side, so calling
@@ -2223,6 +2299,21 @@ function proposeTag(tag) {
       if (err) err.innerText = (e && e.message) || "Couldn't send that. Please try again.";
     });
 }
+
+// Either player can propose turning the session heat up one tier —
+// idempotent server-side, same as proposeTag.
+window.proposeHeatUp = function () {
+  if (!window.Backend || !isSyncActive()) return;
+  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return; // already at max
+  var nextTier = TIER_ORDER[ceilingIdx + 1];
+  window.Backend.createProgressionProposal("heat", nextTier)
+    .then(function () { return refreshCoupleProgression(); })
+    .catch(function () {
+      // Low-stakes — a failed proposal simply isn't there to answer;
+      // tapping the button again retries it.
+    });
+};
 
 // Truth or Dare only ever shows the prompt between rounds — never over
 // an active card, judgment, or power-card moment.
@@ -2238,24 +2329,36 @@ function isTruthOrDareIdle() {
     (!skipSection || skipSection.style.display === "none");
 }
 
+// Shared by both the tag prompt ("Dare we try [tag]?") and the heat
+// prompt ("Dare we turn the heat up?" — the target tier is deliberately
+// not named here; it's revealed by the ceremony once it actually
+// changes). Tag names get the same gradient treatment as everywhere
+// else tags are shown; escaped since subject ultimately comes from the
+// server.
+function progressionPromptHtml(proposal) {
+  if (proposal.kind === "heat") return "Dare we turn the heat up? 🔥";
+  return "Dare we try <span class=\"progression-prompt-tag\">" + escapeHtml(proposal.subject.replace(/-/g, " ")) + "</span>?";
+}
+
 function maybeShowProgressionPrompt() {
   var truthEl = document.getElementById("progressionPromptTruth");
   var personalizeEl = document.getElementById("progressionPromptPersonalize");
   if (!truthEl && !personalizeEl) return;
 
   var openUnanswered = (coupleProgression.openProposals || []).find(function (p) {
-    return p.kind === "tag" && p.myAnswer == null;
+    return (p.kind === "tag" || p.kind === "heat") && p.myAnswer == null;
   });
 
   activeProgressionPromptId = openUnanswered ? openUnanswered.id : null;
   activeProgressionPromptTag = openUnanswered ? openUnanswered.subject : null;
+  activeProgressionPromptKind = openUnanswered ? openUnanswered.kind : null;
 
   if (truthEl) {
     var truthPage = document.getElementById("truth");
     var truthPageActive = truthPage && truthPage.classList.contains("active");
     var showInTruth = !!openUnanswered && isSyncActive() && truthPageActive && isTruthOrDareIdle();
     if (showInTruth) {
-      document.getElementById("progressionPromptTagTruth").innerText = openUnanswered.subject.replace(/-/g, " ");
+      document.getElementById("progressionPromptTextTruth").innerHTML = progressionPromptHtml(openUnanswered);
       truthEl.classList.remove("hidden");
     } else {
       truthEl.classList.add("hidden");
@@ -2265,7 +2368,7 @@ function maybeShowProgressionPrompt() {
   if (personalizeEl) {
     var showInPersonalize = !!openUnanswered && isSyncActive();
     if (showInPersonalize) {
-      document.getElementById("progressionPromptTagPersonalize").innerText = openUnanswered.subject.replace(/-/g, " ");
+      document.getElementById("progressionPromptTextPersonalize").innerHTML = progressionPromptHtml(openUnanswered);
       personalizeEl.classList.remove("hidden");
     } else {
       personalizeEl.classList.add("hidden");
@@ -2279,15 +2382,20 @@ function maybeShowProgressionPrompt() {
 window.respondToProgressionPrompt = function (answer) {
   if (!activeProgressionPromptId || !window.Backend) return;
   var id = activeProgressionPromptId;
-  var tag = activeProgressionPromptTag;
+  var subject = activeProgressionPromptTag;
+  var kind = activeProgressionPromptKind;
   activeProgressionPromptId = null;
   activeProgressionPromptTag = null;
+  activeProgressionPromptKind = null;
   var truthEl = document.getElementById("progressionPromptTruth");
   var personalizeEl = document.getElementById("progressionPromptPersonalize");
   if (truthEl) truthEl.classList.add("hidden");
   if (personalizeEl) personalizeEl.classList.add("hidden");
   window.Backend.respondProgression(id, answer).then(function (result) {
-    if (result === "unlocked" && typeof playTagUnlockCeremony === "function") playTagUnlockCeremony(tag);
+    if (result === "unlocked") {
+      if (kind === "heat" && typeof playHeatRiseCeremony === "function") playHeatRiseCeremony(subject);
+      else if (kind === "tag" && typeof playTagUnlockCeremony === "function") playTagUnlockCeremony(subject);
+    }
     return refreshCoupleProgression();
   }).catch(function () {
     // Low-stakes — if it didn't actually go through, the proposal simply
@@ -2363,13 +2471,42 @@ var tagUnlockCeremonyTimer = null;
 function playTagUnlockCeremony(tag) {
   var el = document.getElementById("tagUnlockCeremony");
   if (!el || !tag) return;
+  var labelEl = document.getElementById("tagUnlockCeremonyLabel");
   var textEl = document.getElementById("tagUnlockCeremonyTag");
+  if (labelEl) labelEl.innerText = "Unlocked";
   if (textEl) textEl.innerText = tag.replace(/-/g, " ");
   el.classList.remove("hidden");
-  el.classList.remove("tag-unlock-ceremony-play");
+  el.classList.remove("tag-unlock-ceremony-play", "ceremony-heat");
   void el.offsetWidth; // restart the CSS animation if it's already mid-play
   el.classList.add("tag-unlock-ceremony-play");
   if (typeof playSfx === "function") playSfx("sparkle");
+  if (tagUnlockCeremonyTimer) clearTimeout(tagUnlockCeremonyTimer);
+  tagUnlockCeremonyTimer = setTimeout(dismissTagUnlockCeremony, 3200);
+}
+
+// Heat-rise ceremony — an ember-glow pulse (the .ceremony-heat modifier
+// on the same overlay) with the tier name igniting, echoing the card
+// draw's ignition sound rather than the tag ceremony's softer sparkle.
+// Updates sessionHeatCeiling and the tier UI immediately, so the new
+// tier's content is playable the instant the ceremony starts — no
+// separate refetch needed to unblock the pool.
+function playHeatRiseCeremony(tier) {
+  var el = document.getElementById("tagUnlockCeremony");
+  if (!el || !tier) return;
+  sessionHeatCeiling = tier;
+  if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+
+  var labelEl = document.getElementById("tagUnlockCeremonyLabel");
+  var textEl = document.getElementById("tagUnlockCeremonyTag");
+  if (labelEl) labelEl.innerText = "Heat Rising";
+  if (textEl) textEl.innerText = tier.charAt(0).toUpperCase() + tier.slice(1);
+  el.classList.remove("hidden");
+  el.classList.remove("tag-unlock-ceremony-play", "ceremony-heat");
+  void el.offsetWidth;
+  el.classList.add("ceremony-heat");
+  el.classList.add("tag-unlock-ceremony-play");
+  if (typeof playSfx === "function") playSfx("draw");
   if (tagUnlockCeremonyTimer) clearTimeout(tagUnlockCeremonyTimer);
   tagUnlockCeremonyTimer = setTimeout(dismissTagUnlockCeremony, 3200);
 }
@@ -2378,7 +2515,7 @@ function dismissTagUnlockCeremony() {
   var el = document.getElementById("tagUnlockCeremony");
   if (el) {
     el.classList.add("hidden");
-    el.classList.remove("tag-unlock-ceremony-play");
+    el.classList.remove("tag-unlock-ceremony-play", "ceremony-heat");
   }
   if (tagUnlockCeremonyTimer) { clearTimeout(tagUnlockCeremonyTimer); tagUnlockCeremonyTimer = null; }
 }
@@ -2388,6 +2525,13 @@ function applyRemoteTagUnlocked(ev) {
   var tag = (ev.payload || {}).tag;
   if (!tag) return;
   playTagUnlockCeremony(tag);
+  refreshCoupleProgression();
+}
+
+function applyRemoteHeatChanged(ev) {
+  var tier = (ev.payload || {}).tier;
+  if (!tier) return;
+  playHeatRiseCeremony(tier);
   refreshCoupleProgression();
 }
 
@@ -3100,6 +3244,8 @@ function handleGameBackendChange() {
   if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
   if (typeof refreshAllPreferenceCaches === "function") refreshAllPreferenceCaches();
   if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
+  if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
   if (typeof renderHomeHero === "function") renderHomeHero();
   if (typeof renderHomeCurrentGame === "function") renderHomeCurrentGame();
 }
@@ -3117,6 +3263,7 @@ function handleGameEvent(ev) {
     case "points_spent": applyRemotePointsSpent(ev); break;
     case "card_played": applyRemoteCardPlayed(ev); break;
     case "tag_unlocked": applyRemoteTagUnlocked(ev); break;
+    case "heat_changed": applyRemoteHeatChanged(ev); break;
   }
 }
 
@@ -3139,6 +3286,36 @@ function computeScoresFromEvents(events) {
   var partner = 0;
   Object.keys(totals).forEach(function (uid) { if (uid !== myId) partner += totals[uid]; });
   return { mine: mine, partner: partner };
+}
+
+// A "session" is pragmatic, not stored anywhere: a 6+ hour gap between
+// consecutive events (or between the last event and now) starts a fresh
+// one at base heat. Within the current session, the ceiling is whatever
+// the most recent heat_changed event set it to — same derive-from-the-
+// event-log pattern as scores, so reconnects/refreshes rebuild it
+// exactly the same way.
+var SESSION_GAP_MS = 6 * 60 * 60 * 1000;
+
+function computeSessionHeatFromEvents(events) {
+  if (!events || !events.length) return TIER_ORDER[0];
+  var now = Date.now();
+  var lastTs = new Date(events[events.length - 1].created_at).getTime();
+  if (now - lastTs > SESSION_GAP_MS) return TIER_ORDER[0];
+
+  var sessionStartIdx = 0;
+  for (var i = events.length - 1; i > 0; i--) {
+    var gap = new Date(events[i].created_at).getTime() - new Date(events[i - 1].created_at).getTime();
+    if (gap > SESSION_GAP_MS) { sessionStartIdx = i; break; }
+  }
+
+  var tier = TIER_ORDER[0];
+  for (var j = sessionStartIdx; j < events.length; j++) {
+    if (events[j].event_type === "heat_changed") {
+      var t = (events[j].payload || {}).tier;
+      if (t && TIER_ORDER.indexOf(t) !== -1) tier = t;
+    }
+  }
+  return tier;
 }
 
 var ROUND_STARTER_CARDS = { redraw: true, spice: true, wildcard: true };
@@ -3180,6 +3357,10 @@ async function rebuildGameStateFromServer() {
   syncScores.partner = scores.partner;
   updateScoreDisplay();
   updateWheelScoreDisplay();
+
+  sessionHeatCeiling = computeSessionHeatFromEvents(events);
+  if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
 
   var truthStarter = findPendingRound(events, "truth_or_dare");
   if (truthStarter) restoreTruthOrDareRound(truthStarter, events);
@@ -3345,7 +3526,7 @@ var POWER_CARDS = {
   double_down: { name: "Double Down", cost: 20, effect: "Play before performing to double this round's awarded points." },
   shield:      { name: "Shield",      cost: 25, effect: "Skip the current card — no penalty, no drink." },
   redraw:      { name: "Redraw",      cost: 15, effect: "Discard the current card and draw a fresh one." },
-  spice:       { name: "Spice",       cost: 35, effect: "Upgrade the current dare one tier." },
+  spice:       { name: "Spice",       cost: 35, effect: "Upgrade the current dare one tier — or reroll it fresh if you're already at your heat ceiling." },
   wildcard:    { name: "Wildcard",    cost: 50, effect: "Skip the draw — hand-pick any dare from your matched deck." }
 };
 var POWER_CARD_ORDER = ["reverse", "double_down", "shield", "redraw", "spice", "wildcard"];
@@ -3425,7 +3606,7 @@ function buildShieldPayload() {
 function buildRedrawPayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
   var mode = syncTruthRound.mode, tier = syncTruthRound.tier;
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No fresh cards available to redraw 😅"); return null; }
@@ -3437,8 +3618,12 @@ function buildRedrawPayload() {
 function buildSpicePayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer" || syncTruthRound.mode !== "dare") return null;
   var curIdx = TIER_ORDER.indexOf(syncTruthRound.tier);
-  var newTier = (curIdx >= 0 && curIdx < TIER_ORDER.length - 1) ? TIER_ORDER[curIdx + 1] : TIER_ORDER[TIER_ORDER.length - 1];
-  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool() });
+  var heatCeiling = getHeatCeilingForPool();
+  var ceilingIdx = heatCeiling ? TIER_ORDER.indexOf(heatCeiling) : TIER_ORDER.length - 1;
+  // Upgrade one tier while under the session's heat ceiling; at the
+  // ceiling, reroll within the current tier instead of upgrading past it.
+  var newTier = (curIdx >= 0 && curIdx < ceilingIdx) ? TIER_ORDER[curIdx + 1] : syncTruthRound.tier;
+  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: heatCeiling });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No cards available at that tier 😅"); return null; }
@@ -3453,7 +3638,7 @@ function buildSpicePayload() {
 function getWildcardPool(tier) {
   var pool = window.Pool.getPlayablePool({
     mode: "dare", tier: tier, matchedOnly: true, matchedOnlyStrict: true, respectGender: false,
-    unlockedTags: getAllowedTagsForPool()
+    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
   });
   return pool.items.map(function (card) {
     return { card: card, cardIndex: pool.fullList.indexOf(card) };
@@ -4450,7 +4635,7 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
     if (!dare) {
       var darePool = window.Pool.getPlayablePool({
         mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
-        unlockedTags: getAllowedTagsForPool()
+        unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
       });
       dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     }
@@ -4571,7 +4756,7 @@ function syncSpin() {
   } else {
     var darePool = window.Pool.getPlayablePool({
       mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
-      unlockedTags: getAllowedTagsForPool()
+      unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
     });
     var dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     forcedCard.cardIndex = darePool.fullList.indexOf(dare);

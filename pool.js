@@ -7,9 +7,10 @@
 // — calls getPlayablePool() instead of filtering gameData/positionsData
 // on its own. Gender/preference/Matched Only/tag-category filtering was
 // moved here verbatim from script.js's older per-call-site logic.
-// unlockedTags (the tag-unlock progression system) is the one filter
-// that was designed here from the start, not extracted — see its
-// doc comment on getPlayablePool below.
+// unlockedTags and heatCeiling (the tag-unlock and session-heat halves
+// of the progression system) are the two filters that were designed
+// here from the start, not extracted — see their doc comments on
+// getPlayablePool below.
 //
 // Loaded after backend.js and before script.js, but — like backend.js —
 // it only touches script.js's globals (gameData, positionsData,
@@ -90,6 +91,20 @@
   }
 
   var WHEEL_DIFFICULTY_BY_TIER = { tease: "beginner", foreplay: "intermediate", dirty: "advanced" };
+  var POOL_TIER_ORDER = ["tease", "foreplay", "dirty"];
+
+  // Session heat: is `tier` strictly above `heatCeiling`? null/undefined
+  // ceiling means no restriction (solo/unlinked — see getHeatCeilingForPool
+  // in script.js, the only place that ever passes a non-null value here).
+  // An unrecognized tier/ceiling name fails open (treated as "not above")
+  // rather than silently hiding content over a typo.
+  function isTierAboveCeiling(tier, heatCeiling) {
+    if (!heatCeiling) return false;
+    var tierIdx = POOL_TIER_ORDER.indexOf(tier);
+    var ceilingIdx = POOL_TIER_ORDER.indexOf(heatCeiling);
+    if (tierIdx === -1 || ceilingIdx === -1) return false;
+    return tierIdx > ceilingIdx;
+  }
 
   // Positions pool: difficulty-mapped from tier, falling back to the
   // full list if that leaves nothing. Identical to the wheel's old
@@ -127,9 +142,12 @@
   //                       unlockedTags and that leaves nothing playable, the tag
   //                       requirement is dropped before the lock is (see below) — the
   //                       wheel always shows *something*, but never a locked dare.
-  // opts.heatCeiling      RESERVED for the upcoming heat/tier progression system (a
-  //                       maximum tier). Accepted but NOT wired to anything yet.
-  //                       Default: no ceiling (unconstrained).
+  // opts.heatCeiling      Truth/dare-only (ignored for mode: 'position' — the Wheel's own
+  //                       tier selector is the ceiling-gated choice upstream of that pool).
+  //                       The couple's session heat ceiling — a tier name. If `tier` is
+  //                       above it, the pool is empty; content above the ceiling never
+  //                       surfaces. null/undefined (the default, and the only value every
+  //                       solo/unlinked call site ever passes) means no restriction.
   // opts.unlockedTags     Dare-only. The couple's full currently-playable tag allow-list
   //                       (base/vanilla tags plus whatever they've unlocked together) —
   //                       computed by the caller, not pool.js. null/undefined (the
@@ -158,9 +176,19 @@
     var respectPreferences = opts.respectPreferences !== false;
     var requireTag = opts.requireTag || null;
     var unlockedTags = opts.unlockedTags || null;
-    // heatCeiling: reserved, intentionally unused (see above).
+    var heatCeiling = opts.heatCeiling || null;
 
     var fullList = gameData[tier][mode === "truth" ? "truths" : "dares"];
+
+    // Session heat gate: a tier above the ceiling is simply not in play —
+    // no fallback to some other tier, just nothing. Callers (the tier
+    // dropdowns, Spice's ceiling-aware tier math) are responsible for
+    // never requesting an above-ceiling tier in normal operation; this is
+    // the defense-in-depth backstop that guarantees it can't leak through
+    // even if they did.
+    if (isTierAboveCeiling(tier, heatCeiling)) {
+      return { items: [], fullList: fullList };
+    }
     var items = fullList;
     if (respectGender) items = filterByGender(items);
 
