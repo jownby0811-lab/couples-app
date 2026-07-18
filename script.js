@@ -2545,6 +2545,7 @@ async function initPersonalizePage() {
   await refreshCoupleProgression();
   renderPersonalizeTagChips();
   renderPersonalizeList();
+  window.setPersonalizeView(personalizeView);
 }
 
 function getPersonalizeTier() {
@@ -2710,6 +2711,375 @@ window.setPersonalizeFilter = function (filter) {
   personalizeFilter = filter;
   renderPersonalizeList();
 };
+
+// ========================= //
+// PERSONALIZE INSIGHTS      //
+// ========================= //
+// The mirror the couple's play data has been building all along — two
+// lenses, and only two. This is a hard privacy architecture rule, not
+// just a design choice:
+//   "Me"  — the user's own picture, computed from their own ratings
+//           only (itemRatings, which never holds the partner's values).
+//   "Us"  — the couple's SHARED picture: mutual-match data (already
+//           couple-level by construction — get_mutual_matches only ever
+//           returns items both partners responded to, never one
+//           partner's individual answer) and game_events (inherently
+//           shared/public gameplay history, not preference data).
+// No stat here may reveal, or allow deriving by subtraction, either
+// partner's individual ratings — if it can't be shown without that
+// risk, it isn't computed at all, let alone displayed.
+
+var personalizeView = "insights"; // 'insights' | 'browse'
+var insightsLens = "me";          // 'me' | 'us'
+var insightsHideDetails = localStorage.getItem("insightsHideDetails") === "true";
+var positionMutualMatches = {};   // item_id -> love boolean, mirrors itemMutualMatches' shape
+var insightsEventsCache = [];
+var insightsUsLoaded = false;
+var INSIGHTS_EVENTS_FETCH_LIMIT = 3000; // a generous window for lifetime play-history stats, not just live state
+
+function parseTierItemId(id) {
+  var idx = id.lastIndexOf(":");
+  return { tier: id.slice(0, idx), index: parseInt(id.slice(idx + 1), 10) };
+}
+
+// ---- Me: own ratings only ----
+
+function computeRatingDistribution(itemType) {
+  var out = { no: 0, maybe: 0, yes: 0, love: 0 };
+  var types = itemType === "all" ? ["dare", "truth"] : [itemType];
+  types.forEach(function (t) {
+    var ratings = itemRatings[t] || {};
+    Object.keys(ratings).forEach(function (id) {
+      var r = ratings[id];
+      if (out.hasOwnProperty(r)) out[r]++;
+    });
+  });
+  out.total = out.no + out.maybe + out.yes + out.love;
+  return out;
+}
+
+function computeTopLovedTags(limit) {
+  var tally = {};
+  var ratings = itemRatings.dare || {};
+  Object.keys(ratings).forEach(function (id) {
+    if (ratings[id] !== "love") return;
+    var p = parseTierItemId(id);
+    var item = gameData[p.tier] && gameData[p.tier].dares[p.index];
+    if (!item) return;
+    (item.tags || []).forEach(function (tag) { tally[tag] = (tally[tag] || 0) + 1; });
+  });
+  return Object.keys(tally)
+    .map(function (tag) { return { tag: tag, count: tally[tag] }; })
+    .sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); })
+    .slice(0, limit || 5);
+}
+
+function computeTagsExploredCount() {
+  var set = {};
+  var ratings = itemRatings.dare || {};
+  Object.keys(ratings).forEach(function (id) {
+    var p = parseTierItemId(id);
+    var item = gameData[p.tier] && gameData[p.tier].dares[p.index];
+    if (!item) return;
+    (item.tags || []).forEach(function (tag) { set[tag] = true; });
+  });
+  return Object.keys(set).length;
+}
+
+function insightsMeHasData() {
+  return computeRatingDistribution("all").total > 0;
+}
+
+// ---- Us: mutual/shared data only ----
+// itemMutualMatches.dare/.truth are already the couple-level mutual-match
+// caches used elsewhere (love-glow on drawn cards) — reused here rather
+// than fetched again. Positions have no equivalent cache yet, so this
+// adds one, refreshed lazily (only when the Us lens is actually opened).
+
+async function refreshPositionMutualMatches() {
+  if (!isSyncActive() || !window.Backend) { positionMutualMatches = {}; return; }
+  var matches = await window.Backend.getMutualMatches("position");
+  var map = {};
+  (matches || []).forEach(function (m) { map[m.item_id] = !!m.love; });
+  positionMutualMatches = map;
+}
+
+async function refreshInsightsEventsCache() {
+  if (!isSyncActive() || !window.GameSync) { insightsEventsCache = []; return; }
+  insightsEventsCache = await window.GameSync.fetchRecent(INSIGHTS_EVENTS_FETCH_LIMIT);
+}
+
+// Ranked by mutual strength — a mutually-loved dare counts double a
+// plain mutual match, since get_mutual_matches' own 'love' flag is
+// already itself couple-level (bool_or across both partners), never one
+// partner's individual answer.
+function computeMutualTagRanking(limit) {
+  var tally = {};
+  var matches = itemMutualMatches.dare || {};
+  Object.keys(matches).forEach(function (id) {
+    var p = parseTierItemId(id);
+    var item = gameData[p.tier] && gameData[p.tier].dares[p.index];
+    if (!item) return;
+    var weight = matches[id] ? 2 : 1;
+    (item.tags || []).forEach(function (tag) { tally[tag] = (tally[tag] || 0) + weight; });
+  });
+  return Object.keys(tally)
+    .map(function (tag) { return { tag: tag, score: tally[tag] }; })
+    .sort(function (a, b) { return b.score - a.score || a.tag.localeCompare(b.tag); })
+    .slice(0, limit || 6);
+}
+
+function computeWeBothWantTotals() {
+  function totalsFor(map) {
+    var keys = Object.keys(map || {});
+    var love = keys.filter(function (id) { return map[id]; }).length;
+    return { total: keys.length, love: love };
+  }
+  return {
+    dare: totalsFor(itemMutualMatches.dare),
+    truth: totalsFor(itemMutualMatches.truth),
+    position: totalsFor(positionMutualMatches)
+  };
+}
+
+function computeUnlockedTagsTimeline() {
+  return insightsEventsCache
+    .filter(function (e) { return e.event_type === "tag_unlocked" && (e.payload || {}).tag; })
+    .map(function (e) { return { tag: e.payload.tag, date: e.created_at }; })
+    .sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+}
+
+function computePlayHistoryStats() {
+  var dares = 0, truths = 0, wheel = 0, powerCardsTotal = 0;
+  insightsEventsCache.forEach(function (e) {
+    var p = e.payload || {};
+    if (e.event_type === "points_awarded") {
+      if (p.source === "wheel") wheel++; else dares++;
+    } else if (e.event_type === "truth_judged") {
+      truths++;
+    } else if (e.event_type === "card_skipped") {
+      if (p.mode === "truth") truths++; else if (p.mode === "dare") dares++;
+    } else if (e.event_type === "card_played") {
+      powerCardsTotal++;
+    }
+  });
+  var scores = computeScoresFromEvents(insightsEventsCache);
+  return {
+    daresResolved: dares, truthsResolved: truths, wheelResolved: wheel,
+    roundsTogether: dares + truths + wheel,
+    pointsMine: scores.mine, pointsPartner: scores.partner,
+    powerCardsTotal: powerCardsTotal,
+    sessions: countDistinctSessions(insightsEventsCache)
+  };
+}
+
+function insightsUsHasData() {
+  if (!isSyncActive()) return false;
+  var totals = computeWeBothWantTotals();
+  var mutualTotal = totals.dare.total + totals.truth.total + totals.position.total;
+  return mutualTotal > 0 || computeUnlockedTagsTimeline().length > 0 || computePlayHistoryStats().roundsTogether > 0;
+}
+
+// ---- View/lens plumbing ----
+
+window.setPersonalizeView = function (view) {
+  personalizeView = view;
+  var insightsEl = document.getElementById("personalizeInsightsSection");
+  var browseEl = document.getElementById("personalizeBrowseSection");
+  if (insightsEl) insightsEl.classList.toggle("hidden", view !== "insights");
+  if (browseEl) browseEl.classList.toggle("hidden", view !== "browse");
+  var tabInsights = document.getElementById("personalizeViewTabInsights");
+  var tabBrowse = document.getElementById("personalizeViewTabBrowse");
+  if (tabInsights) tabInsights.classList.toggle("active", view === "insights");
+  if (tabBrowse) tabBrowse.classList.toggle("active", view === "browse");
+  if (view === "insights") refreshInsightsActiveLens();
+};
+
+window.setInsightsLens = function (lens) {
+  insightsLens = lens;
+  var meEl = document.getElementById("insightsMePanel");
+  var usEl = document.getElementById("insightsUsPanel");
+  if (meEl) meEl.classList.toggle("hidden", lens !== "me");
+  if (usEl) usEl.classList.toggle("hidden", lens !== "us");
+  var tabMe = document.getElementById("insightsLensTabMe");
+  var tabUs = document.getElementById("insightsLensTabUs");
+  if (tabMe) tabMe.classList.toggle("active", lens === "me");
+  if (tabUs) tabUs.classList.toggle("active", lens === "us");
+  refreshInsightsActiveLens();
+};
+
+function refreshInsightsActiveLens() {
+  if (personalizeView !== "insights") return;
+  if (insightsLens === "me") {
+    renderInsightsMe();
+  } else {
+    renderInsightsUs();
+    if (isSyncActive()) {
+      Promise.all([refreshPositionMutualMatches(), refreshInsightsEventsCache()]).then(function () {
+        insightsUsLoaded = true;
+        renderInsightsUs();
+      });
+    }
+  }
+}
+
+window.toggleInsightsHideDetails = function () {
+  insightsHideDetails = !insightsHideDetails;
+  localStorage.setItem("insightsHideDetails", insightsHideDetails ? "true" : "false");
+  renderInsightsUs();
+};
+
+function insightsTagLabel(tag, index) {
+  return insightsHideDetails ? ("Tag #" + (index + 1)) : tag.replace(/-/g, " ");
+}
+
+function renderInsightsMe() {
+  var el = document.getElementById("insightsMePanel");
+  if (!el) return;
+
+  if (!insightsMeHasData()) {
+    el.innerHTML =
+      '<div class="insights-private-badge">🔒 Only you see this</div>' +
+      '<div class="insights-empty">' +
+        '<div class="insights-empty-icon">✨</div>' +
+        '<p class="insights-empty-text">Rate a few truths and dares in Browse to start building your picture.</p>' +
+      "</div>";
+    return;
+  }
+
+  var dist = computeRatingDistribution("all");
+  var max = Math.max(dist.no, dist.maybe, dist.yes, dist.love, 1);
+  var rows = [
+    { key: "love", label: "💕 Love", cls: "insights-bar-love" },
+    { key: "yes", label: "👍 Yes", cls: "insights-bar-yes" },
+    { key: "maybe", label: "🤔 Maybe", cls: "insights-bar-maybe" },
+    { key: "no", label: "🚫 No", cls: "insights-bar-no" }
+  ];
+  var barsHtml = rows.map(function (r) {
+    var pct = Math.round((dist[r.key] / max) * 100);
+    return '<div class="insights-bar-row">' +
+      '<span class="insights-bar-label">' + r.label + "</span>" +
+      '<div class="insights-bar-track"><div class="insights-bar-fill ' + r.cls + '" style="width:' + pct + '%"></div></div>' +
+      '<span class="insights-bar-count">' + dist[r.key] + "</span>" +
+      "</div>";
+  }).join("");
+
+  var topTags = computeTopLovedTags(5);
+  var tagsHtml = topTags.length
+    ? '<div class="insights-tag-rank-list">' + topTags.map(function (t, i) {
+        return '<div class="insights-tag-rank-row">' +
+          '<span class="insights-tag-rank-num">' + (i + 1) + "</span>" +
+          '<span class="insights-tag-rank-name">' + escapeHtml(t.tag.replace(/-/g, " ")) + "</span>" +
+          '<span class="insights-tag-rank-count">' + t.count + " 💕</span>" +
+          "</div>";
+      }).join("") + "</div>"
+    : '<p class="insights-inline-empty">Love a few dares to see your top tags here.</p>';
+
+  el.innerHTML =
+    '<div class="insights-private-badge">🔒 Only you see this</div>' +
+    '<div class="pos-section-title">Your Rating Breakdown</div>' +
+    '<div class="insights-bar-list">' + barsHtml + "</div>" +
+    '<div class="pos-section-title">Your Top Tags</div>' +
+    tagsHtml +
+    '<div class="pos-section-title">Your Journey</div>' +
+    '<div class="insights-stat-grid">' +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Rated</div><div class="insights-stat-value">' + dist.total + "</div></div>" +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Tags Explored</div><div class="insights-stat-value">' + computeTagsExploredCount() + "</div></div>" +
+    "</div>";
+}
+
+function renderInsightsUs() {
+  var el = document.getElementById("insightsUsPanel");
+  if (!el) return;
+
+  if (!isSyncActive()) {
+    el.innerHTML =
+      '<div class="insights-empty">' +
+        '<div class="insights-empty-icon">💞</div>' +
+        '<p class="insights-empty-text">Link with your partner to start building your shared story.</p>' +
+      "</div>";
+    return;
+  }
+
+  if (!insightsUsLoaded) {
+    el.innerHTML =
+      '<div class="insights-celebratory-badge">💞 Your story so far</div>' +
+      '<div class="insights-empty"><p class="insights-empty-text">Loading your story…</p></div>';
+    return;
+  }
+
+  if (!insightsUsHasData()) {
+    el.innerHTML =
+      '<div class="insights-celebratory-badge">💞 Your story so far</div>' +
+      '<div class="insights-empty">' +
+        '<div class="insights-empty-icon">🌙</div>' +
+        '<p class="insights-empty-text">Play a few rounds together to reveal your shared story here.</p>' +
+      "</div>";
+    return;
+  }
+
+  var tagRanking = computeMutualTagRanking(6);
+  var tagsHtml = tagRanking.length
+    ? '<div class="insights-tag-rank-list">' + tagRanking.map(function (t, i) {
+        return '<div class="insights-tag-rank-row">' +
+          '<span class="insights-tag-rank-num">' + (i + 1) + "</span>" +
+          '<span class="insights-tag-rank-name">' + escapeHtml(insightsTagLabel(t.tag, i)) + "</span>" +
+          '<span class="insights-tag-rank-count">' + t.score + "</span>" +
+          "</div>";
+      }).join("") + "</div>"
+    : '<p class="insights-inline-empty">Rate a few dares together to see the tags you both love.</p>';
+
+  var totals = computeWeBothWantTotals();
+  function wantTile(label, t) {
+    return '<div class="insights-stat-tile">' +
+      '<div class="insights-stat-label">' + label + "</div>" +
+      '<div class="insights-stat-value">' + t.total + "</div>" +
+      (t.love ? '<div class="insights-stat-sub">' + t.love + " loved 💕</div>" : "") +
+      "</div>";
+  }
+
+  var timeline = computeUnlockedTagsTimeline();
+  var timelineHtml = timeline.length
+    ? '<div class="insights-timeline">' + timeline.map(function (t, i) {
+        var dateStr = new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+        return '<div class="insights-timeline-row">' +
+          '<span class="insights-timeline-date">' + dateStr + "</span>" +
+          '<span class="insights-timeline-tag">' + escapeHtml(insightsTagLabel(t.tag, i)) + "</span>" +
+          "</div>";
+      }).join("") + "</div>"
+    : '<p class="insights-inline-empty">Unlock a tag together to start your timeline.</p>';
+
+  var history = computePlayHistoryStats();
+  var partnerName = escapeHtml(gameSyncPartnerName || "Partner");
+  var myName = escapeHtml(gameSyncMyName || "You");
+
+  el.innerHTML =
+    '<div class="insights-us-header">' +
+      '<div class="insights-celebratory-badge">💞 Your story so far</div>' +
+      '<button type="button" class="insights-hide-toggle' + (insightsHideDetails ? " active" : "") + '" onclick="toggleInsightsHideDetails()">' +
+        (insightsHideDetails ? "Show details" : "Hide details") +
+      "</button>" +
+    "</div>" +
+    '<div class="pos-section-title">Tags You Both Love</div>' +
+    tagsHtml +
+    '<div class="pos-section-title">We Both Want This</div>' +
+    '<div class="insights-stat-grid insights-stat-grid-3">' +
+      wantTile("Dares", totals.dare) + wantTile("Truths", totals.truth) + wantTile("Positions", totals.position) +
+    "</div>" +
+    '<div class="pos-section-title">Unlocked Together</div>' +
+    timelineHtml +
+    '<div class="pos-section-title">Play History</div>' +
+    '<div class="insights-stat-grid">' +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Rounds Together</div><div class="insights-stat-value">' + history.roundsTogether + "</div></div>" +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Dares vs Truths</div><div class="insights-stat-value insights-stat-value-small">' + history.daresResolved + " / " + history.truthsResolved + "</div></div>" +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Sessions</div><div class="insights-stat-value">' + history.sessions + "</div></div>" +
+      '<div class="insights-stat-tile"><div class="insights-stat-label">Power Cards Played</div><div class="insights-stat-value">' + history.powerCardsTotal + "</div></div>" +
+    "</div>" +
+    '<div class="insights-points-row">' +
+      '<span>' + myName + ": " + history.pointsMine + " 🔥</span>" +
+      '<span>' + partnerName + ": " + history.pointsPartner + " 🔥</span>" +
+    "</div>";
+}
 
 // ========================= //
 // IN-GAME CARD RATING       //
