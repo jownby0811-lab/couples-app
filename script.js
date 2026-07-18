@@ -21,6 +21,7 @@ window.showPage = function (pageId) {
   if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
     resizeWheelCanvas();
     drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+    if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
     if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
     if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
   }
@@ -1912,12 +1913,13 @@ function endSyncTruthRound() {
   if (label) label.classList.add("hidden");
   if (typeof renderHandTray === "function") renderHandTray();
   if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
+  if (typeof refreshEngineSnapshot === "function") refreshEngineSnapshot();
 }
 
 function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
-  var tier = getSelectedTier();
+  var tier = getEffectiveDrawTier(getSelectedTier());
   var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
@@ -2391,6 +2393,7 @@ window.respondToProgressionPrompt = function (answer) {
   var personalizeEl = document.getElementById("progressionPromptPersonalize");
   if (truthEl) truthEl.classList.add("hidden");
   if (personalizeEl) personalizeEl.classList.add("hidden");
+  if (kind === "heat" && answer === false) heatProposalDeclinedThisSession = true;
   window.Backend.respondProgression(id, answer).then(function (result) {
     if (result === "unlocked") {
       if (kind === "heat" && typeof playHeatRiseCeremony === "function") playHeatRiseCeremony(subject);
@@ -3053,11 +3056,42 @@ function renderAccountCoupleArea() {
         '<p class="auth-sub small">Waiting for your partner to join…</p>' +
       "</div>";
   } else {
+    var mode = coupleProgression.progressionMode || "manual";
     area.innerHTML =
       '<p class="auth-sub">Linked with <strong>' + escapeHtml(couple.partnerName) + '</strong> 💞</p>' +
+      '<div class="progression-mode-section">' +
+        '<div class="progression-mode-label">Progression</div>' +
+        '<p class="auth-sub small">' +
+          (mode === "adaptive"
+            ? "The game quietly paces itself to how tonight is going, and still only ever asks — never unlocks anything on its own."
+            : "You and your partner unlock things together, on your own terms.") +
+        "</p>" +
+        '<div class="auth-tabs progression-mode-tabs">' +
+          '<button class="auth-tab' + (mode === "manual" ? " active" : "") + '" onclick="handleSetProgressionMode(\'manual\')">Manual</button>' +
+          '<button class="auth-tab' + (mode === "adaptive" ? " active" : "") + '" onclick="handleSetProgressionMode(\'adaptive\')">Adaptive</button>' +
+        "</div>" +
+        '<p id="progressionModeError" class="auth-error"></p>' +
+      "</div>" +
       '<button onclick="handleLeaveCouple()" class="auth-secondary-btn">Leave Couple</button>';
   }
 }
+
+// Either partner can flip the couple's progression mode; visible to both
+// via get_couple_progression. Idempotent-ish from the UI's perspective —
+// re-picking the already-active mode just re-renders the same state.
+function handleSetProgressionMode(mode) {
+  if (!window.Backend || !isSyncActive()) return;
+  var err = document.getElementById("progressionModeError");
+  if (err) err.innerText = "";
+  window.Backend.setProgressionMode(mode)
+    .then(function () { return refreshCoupleProgression(); })
+    .then(function () { renderAccountCoupleArea(); })
+    .catch(function (e) {
+      var errEl = document.getElementById("progressionModeError");
+      if (errEl) errEl.innerText = (e && e.message) || "Couldn't update progression mode. Please try again.";
+    });
+}
+window.handleSetProgressionMode = handleSetProgressionMode;
 
 function renderAccountPage() {
   var recoveryArea = document.getElementById("acctRecoveryArea");
@@ -3078,6 +3112,9 @@ function renderAccountPage() {
     profileArea.classList.remove("hidden");
     renderAccountProfile();
     renderAccountCoupleArea();
+    if (isSyncActive()) {
+      refreshCoupleProgression().then(function () { renderAccountCoupleArea(); });
+    }
   } else {
     authArea.classList.remove("hidden");
     profileArea.classList.add("hidden");
@@ -3296,26 +3333,375 @@ function computeScoresFromEvents(events) {
 // exactly the same way.
 var SESSION_GAP_MS = 6 * 60 * 60 * 1000;
 
-function computeSessionHeatFromEvents(events) {
-  if (!events || !events.length) return TIER_ORDER[0];
+// Returns the events belonging to the CURRENT session — the trailing run
+// of events with no gap wider than SESSION_GAP_MS between them, and only
+// if the very last event is itself recent. Returns [] when there's no
+// live session (no events, or the last one is stale). Shared by session
+// heat and the adaptive engine's session-scoped readiness signals below.
+function findCurrentSessionEvents(events) {
+  if (!events || !events.length) return [];
   var now = Date.now();
   var lastTs = new Date(events[events.length - 1].created_at).getTime();
-  if (now - lastTs > SESSION_GAP_MS) return TIER_ORDER[0];
+  if (now - lastTs > SESSION_GAP_MS) return [];
 
   var sessionStartIdx = 0;
   for (var i = events.length - 1; i > 0; i--) {
     var gap = new Date(events[i].created_at).getTime() - new Date(events[i - 1].created_at).getTime();
     if (gap > SESSION_GAP_MS) { sessionStartIdx = i; break; }
   }
+  return events.slice(sessionStartIdx);
+}
 
+function computeSessionHeatFromEvents(events) {
+  var sessionEvents = findCurrentSessionEvents(events);
   var tier = TIER_ORDER[0];
-  for (var j = sessionStartIdx; j < events.length; j++) {
-    if (events[j].event_type === "heat_changed") {
-      var t = (events[j].payload || {}).tier;
+  for (var j = 0; j < sessionEvents.length; j++) {
+    if (sessionEvents[j].event_type === "heat_changed") {
+      var t = (sessionEvents[j].payload || {}).tier;
       if (t && TIER_ORDER.indexOf(t) !== -1) tier = t;
     }
   }
   return tier;
+}
+
+// ========================= //
+// ADAPTIVE PROGRESSION ENGINE //
+// ========================= //
+// A per-device, read-only engine for 'adaptive' mode couples (see
+// setProgressionMode / renderAccountCoupleArea). It runs independently
+// on each partner's device and only ever DOES two things:
+//   1. Proposes — via the exact same window.Backend.createProgressionProposal
+//      RPC and both-yes-decides flow as a manually-tapped "Dare we..."
+//      button. A system proposal carries no marker distinguishing it from
+//      a manual one — proposals already render with no proposer shown, so
+//      this is invisible by construction, not by extra effort.
+//   2. Biases which tier gets drawn from, silently, within the existing
+//      session heat ceiling — never touching the ceiling itself, never
+//      unlocking a tag, never writing any event or row anywhere.
+// It is fully dormant (isAdaptiveEngineActive() false) in manual mode,
+// for unlinked couples, and for logged-out users — every entry point
+// below is gated on that one check, so those three cases are
+// regression-identical to the engine not existing at all.
+//
+// Every threshold the engine acts on lives in this one block.
+var ADAPTIVE_ENGINE = {
+  // Heat readiness (session-scoped, current ceiling tier only)
+  HEAT_MIN_RESOLVED_ROUNDS: 8,        // resolved rounds at the ceiling tier this session
+  HEAT_MIN_COMPLETION_SHARE: 0.75,    // completed / (completed + skipped)
+  HEAT_MIN_RATED_ITEMS: 3,            // own quick-rates needed before skew counts
+  HEAT_MIN_YES_LOVE_SHARE: 0.6,       // share of own quick-rates that are yes/love
+
+  // Tag readiness (account-scoped adjacency, static content library)
+  TAG_MIN_SESSIONS_BEFORE_ELIGIBLE: 3, // never in a user's first couple of sessions
+  TAG_COOLDOWN_DAYS: 5,                // min days between system tag proposals (localStorage-paced)
+  TAG_MIN_LOVED_SOURCE_TAGS: 1,        // need at least one mutually-loved dare's tags to seed adjacency
+  TAG_MIN_COOCCURRENCE: 2,             // min shared-dare co-occurrence to count as "adjacent"
+
+  // Cooling (session-scoped, silent — never a proposal, never the ceiling)
+  COOLING_MIN_SIGNAL_ROUNDS: 4,        // min resolved rounds at the ceiling tier before skip-share counts
+  COOLING_MIN_ORGANIC_SKIP_SHARE: 0.4, // organic skip share that reads as "souring"
+  COOLING_MIN_RATED_ITEMS: 3,          // own quick-rates needed before negative skew counts
+  COOLING_MAX_YES_LOVE_SHARE: 0.4      // yes/love share at/below this reads as "souring"
+};
+
+// True only for logged-in, linked couples in 'adaptive' mode — the single
+// gate every engine entry point below funnels through.
+function isAdaptiveEngineActive() {
+  return isSyncActive() && coupleProgression.progressionMode === "adaptive";
+}
+
+// The last events snapshot the engine has seen — refreshed alongside the
+// existing full-state rebuild and after each round resolves (see
+// refreshEngineSnapshot). Never fetched purely for the engine's sake on
+// its own schedule; it always rides an existing fetch or an existing
+// natural trigger point.
+var cachedSyncEvents = [];
+
+// Round-outcome + drawn-item tallies for one tier, scoped to a session
+// event slice (see findCurrentSessionEvents). Shield-resolved skips are
+// excluded entirely (strategic, not discomfort — detected via a
+// card_played 'shield' event sharing the round's id); drink-mode
+// forfeits (kind 'drink') are tallied separately from organic ('money')
+// skips and likewise excluded from the organic-skip signal, since taking
+// a drink is a game-mode choice, not a discomfort signal.
+function computeTierRoundBucket(sessionEvents, tier) {
+  var shieldRoundIds = {};
+  sessionEvents.forEach(function (e) {
+    if (e.event_type === "card_played" && (e.payload || {}).card === "shield") {
+      shieldRoundIds[(e.payload || {}).roundId] = true;
+    }
+  });
+
+  var completed = 0, organicSkips = 0, otherSkips = 0;
+  var drawnItems = []; // { itemType, id }
+
+  sessionEvents.forEach(function (e) {
+    var p = e.payload || {};
+    if (p.tier !== tier) return;
+    if (e.event_type === "card_drawn") {
+      if (p.mode === "dare" || p.mode === "truth") drawnItems.push({ itemType: p.mode, id: tierItemId(p.tier, p.cardIndex) });
+    } else if (e.event_type === "points_awarded" || e.event_type === "truth_judged") {
+      completed++;
+    } else if (e.event_type === "card_skipped") {
+      if (shieldRoundIds[p.roundId]) return;
+      if (p.kind === "money") organicSkips++;
+      else otherSkips++;
+    }
+  });
+
+  var resolved = completed + organicSkips + otherSkips;
+  return {
+    resolved: resolved,
+    completed: completed,
+    organicSkips: organicSkips,
+    completionShare: resolved > 0 ? completed / resolved : 0,
+    organicSkipShare: resolved > 0 ? organicSkips / resolved : 0,
+    drawnItems: drawnItems
+  };
+}
+
+// Own quick-rate skew among a set of drawn items — itemRatings only ever
+// holds THIS device's user's own ratings (never the partner's), so no
+// extra filtering is needed to keep this private. A rating's timestamp
+// isn't tracked client-side (no schema change for this feature), so this
+// is a best-effort correlation of "drawn this session" with "currently
+// rated" rather than a strict same-session rating — an acceptable
+// approximation for a soft readiness signal.
+function computeOwnRatingSkewThisSession(drawnItems) {
+  var yesLove = 0, noMaybe = 0, rated = 0;
+  drawnItems.forEach(function (item) {
+    var rating = itemRatings[item.itemType] && itemRatings[item.itemType][item.id];
+    if (!rating) return;
+    rated++;
+    if (rating === "yes" || rating === "love") yesLove++;
+    else if (rating === "no" || rating === "maybe") noMaybe++;
+  });
+  return { rated: rated, yesLove: yesLove, noMaybe: noMaybe, yesLoveShare: rated > 0 ? yesLove / rated : 0 };
+}
+
+// Distinct sessions represented in an event list (see SESSION_GAP_MS) —
+// a best-effort count bounded by however much history was fetched, used
+// only to gate "not in a user's first couple of sessions" for tag
+// proposals.
+function countDistinctSessions(events) {
+  if (!events || !events.length) return 0;
+  var count = 1;
+  for (var i = 1; i < events.length; i++) {
+    var gap = new Date(events[i].created_at).getTime() - new Date(events[i - 1].created_at).getTime();
+    if (gap > SESSION_GAP_MS) count++;
+  }
+  return count;
+}
+
+// ---- Heat readiness ----
+// "No re-proposal this session" applies whether the proposal ages out
+// unanswered or gets an explicit 'not yet' — both flags reset together
+// the moment a genuinely new session starts (see updateEngineSessionAnchor).
+var heatProposalDeclinedThisSession = false;
+var heatProposedThisSession = false;
+var engineSessionAnchor = null;
+
+function updateEngineSessionAnchor(sessionEvents) {
+  var anchor = sessionEvents.length ? sessionEvents[0].created_at : null;
+  if (anchor !== engineSessionAnchor) {
+    engineSessionAnchor = anchor;
+    heatProposalDeclinedThisSession = false;
+    heatProposedThisSession = false;
+  }
+}
+
+function checkHeatReadiness(events) {
+  if (!isAdaptiveEngineActive()) return;
+  if (heatProposalDeclinedThisSession || heatProposedThisSession) return;
+  var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
+  if (hasOpenHeatProposal) return;
+
+  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return; // already at max
+
+  var sessionEvents = findCurrentSessionEvents(events);
+  var bucket = computeTierRoundBucket(sessionEvents, sessionHeatCeiling);
+  if (bucket.resolved < ADAPTIVE_ENGINE.HEAT_MIN_RESOLVED_ROUNDS) return;
+  if (bucket.completionShare < ADAPTIVE_ENGINE.HEAT_MIN_COMPLETION_SHARE) return;
+
+  var skew = computeOwnRatingSkewThisSession(bucket.drawnItems);
+  if (skew.rated < ADAPTIVE_ENGINE.HEAT_MIN_RATED_ITEMS) return;
+  if (skew.yesLoveShare < ADAPTIVE_ENGINE.HEAT_MIN_YES_LOVE_SHARE) return;
+
+  proposeSystemHeatUp();
+}
+
+// Same RPC call as window.proposeHeatUp — deliberately indistinguishable.
+function proposeSystemHeatUp() {
+  if (!window.Backend || !isSyncActive()) return;
+  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return;
+  var nextTier = TIER_ORDER[ceilingIdx + 1];
+  heatProposedThisSession = true;
+  window.Backend.createProgressionProposal("heat", nextTier)
+    .then(function () { return refreshCoupleProgression(); })
+    .catch(function () {
+      // Low-stakes — a failed proposal simply isn't there to answer.
+    });
+}
+
+// ---- Tag readiness (adjacency) ----
+// "Quiet, occasional, never a stream" — paced by a localStorage cooldown
+// timestamp. This is device-local pacing state, not shared application
+// data: it never touches game_events or any table, and the RPC's own
+// server-side idempotency (one open proposal per subject) is the real
+// cross-device safety net this sits on top of.
+var TAG_PROPOSAL_COOLDOWN_KEY = "adaptiveTagProposalLastAt";
+
+function tagProposalCooldownActive() {
+  var last = localStorage.getItem(TAG_PROPOSAL_COOLDOWN_KEY);
+  if (!last) return false;
+  var elapsedDays = (Date.now() - parseInt(last, 10)) / (24 * 60 * 60 * 1000);
+  return elapsedDays < ADAPTIVE_ENGINE.TAG_COOLDOWN_DAYS;
+}
+
+function markTagProposalMade() {
+  localStorage.setItem(TAG_PROPOSAL_COOLDOWN_KEY, String(Date.now()));
+}
+
+// tag -> tag -> shared-dare count, built fresh from the static content
+// library each time (cheap — it's a few hundred dares, not a query).
+function buildDareTagCooccurrence() {
+  var co = {};
+  TIER_ORDER.forEach(function (tier) {
+    gameData[tier].dares.forEach(function (d) {
+      var tags = d.tags || [];
+      tags.forEach(function (a) {
+        tags.forEach(function (b) {
+          if (a === b) return;
+          co[a] = co[a] || {};
+          co[a][b] = (co[a][b] || 0) + 1;
+        });
+      });
+    });
+  });
+  return co;
+}
+
+// Tags carried by dares the couple has mutually matched on — a mutual
+// match already means both partners rated the item 'love', so this is
+// simultaneously "matched" and "loved" by construction.
+function computeLovedSourceTags() {
+  var tagSet = {};
+  TIER_ORDER.forEach(function (tier) {
+    gameData[tier].dares.forEach(function (d, idx) {
+      var id = tierItemId(tier, idx);
+      if (itemMutualMatches.dare[id] === true) {
+        (d.tags || []).forEach(function (t) { tagSet[t] = true; });
+      }
+    });
+  });
+  return Object.keys(tagSet);
+}
+
+// The single best-adjacency locked tag, or null if nothing clears the
+// co-occurrence bar. Sorted candidates keep the pick deterministic on ties.
+function computeTagAdjacencyCandidate() {
+  var sourceTags = computeLovedSourceTags();
+  if (sourceTags.length < ADAPTIVE_ENGINE.TAG_MIN_LOVED_SOURCE_TAGS) return null;
+
+  var unlockedSet = {};
+  (coupleProgression.unlockedTags || []).forEach(function (t) { unlockedSet[t] = true; });
+  var openTagSubjects = {};
+  (coupleProgression.openProposals || []).forEach(function (p) { if (p.kind === "tag") openTagSubjects[p.subject] = true; });
+
+  var locked = getAdvancedTags().filter(function (t) { return !unlockedSet[t] && !openTagSubjects[t]; }).sort();
+  if (!locked.length) return null;
+
+  var co = buildDareTagCooccurrence();
+  var best = null, bestScore = 0;
+  locked.forEach(function (candidate) {
+    var score = 0;
+    sourceTags.forEach(function (s) {
+      if (s === candidate) return;
+      score += (co[candidate] && co[candidate][s]) || 0;
+    });
+    if (score > bestScore) { bestScore = score; best = candidate; }
+  });
+  return bestScore >= ADAPTIVE_ENGINE.TAG_MIN_COOCCURRENCE ? best : null;
+}
+
+function checkTagReadiness(events) {
+  if (!isAdaptiveEngineActive()) return;
+  if (countDistinctSessions(events) < ADAPTIVE_ENGINE.TAG_MIN_SESSIONS_BEFORE_ELIGIBLE) return;
+  if (tagProposalCooldownActive()) return;
+  var hasOpenTagProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "tag"; });
+  if (hasOpenTagProposal) return;
+
+  var candidate = computeTagAdjacencyCandidate();
+  if (!candidate) return;
+  proposeSystemTag(candidate);
+}
+
+// Same RPC call as proposeTag — deliberately indistinguishable.
+function proposeSystemTag(tag) {
+  if (!window.Backend || !isSyncActive()) return;
+  markTagProposalMade();
+  window.Backend.createProgressionProposal("tag", tag)
+    .then(function () { return refreshCoupleProgression(); })
+    .catch(function () {
+      // Low-stakes — a failed proposal simply isn't there to answer.
+    });
+}
+
+// ---- Cooling ----
+// Silent by design: no prompt, no message, no ceiling change, no visible
+// state anywhere. Only getEffectiveDrawTier's return value differs from
+// the requested tier — everything else about the round is untouched.
+function checkCoolingActive(events) {
+  if (!isAdaptiveEngineActive()) return false;
+  var sessionEvents = findCurrentSessionEvents(events);
+  var bucket = computeTierRoundBucket(sessionEvents, sessionHeatCeiling);
+
+  var skipSouring = bucket.resolved >= ADAPTIVE_ENGINE.COOLING_MIN_SIGNAL_ROUNDS &&
+    bucket.organicSkipShare >= ADAPTIVE_ENGINE.COOLING_MIN_ORGANIC_SKIP_SHARE;
+
+  var skew = computeOwnRatingSkewThisSession(bucket.drawnItems);
+  var ratingSouring = skew.rated >= ADAPTIVE_ENGINE.COOLING_MIN_RATED_ITEMS &&
+    skew.yesLoveShare <= ADAPTIVE_ENGINE.COOLING_MAX_YES_LOVE_SHARE;
+
+  return skipSouring || ratingSouring;
+}
+
+// The one function draw call sites wrap their tier through. A no-op
+// (returns tier unchanged) whenever the engine is inactive, at the
+// bottom tier already, or cooling isn't currently active — so this is
+// exactly pool.js's existing draw behavior plus, at most, one tier of
+// silent downward bias within the ceiling that's already in effect.
+function getEffectiveDrawTier(tier) {
+  if (!isAdaptiveEngineActive()) return tier;
+  if (!checkCoolingActive(cachedSyncEvents)) return tier;
+  var idx = TIER_ORDER.indexOf(tier);
+  if (idx <= 0) return tier;
+  return TIER_ORDER[idx - 1];
+}
+
+// ---- Tick / snapshot wiring ----
+// The engine only ever evaluates readiness right after an events fetch
+// that was already happening for other reasons (a full state rebuild, or
+// the lightweight re-fetch below after a round resolves) — it never
+// polls or fetches on its own schedule.
+function runAdaptiveEngineTick(events) {
+  if (!isAdaptiveEngineActive()) return;
+  updateEngineSessionAnchor(findCurrentSessionEvents(events));
+  checkHeatReadiness(events);
+  checkTagReadiness(events);
+}
+
+async function refreshEngineSnapshot() {
+  if (!isAdaptiveEngineActive() || !window.GameSync) return;
+  try {
+    var events = await window.GameSync.fetchRecent(200);
+    cachedSyncEvents = events;
+    runAdaptiveEngineTick(events);
+  } catch (e) {
+    // Best-effort — the engine simply waits for the next natural trigger.
+  }
 }
 
 var ROUND_STARTER_CARDS = { redraw: true, spice: true, wildcard: true };
@@ -3361,6 +3747,9 @@ async function rebuildGameStateFromServer() {
   sessionHeatCeiling = computeSessionHeatFromEvents(events);
   if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
   if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+
+  cachedSyncEvents = events;
+  if (typeof runAdaptiveEngineTick === "function") runAdaptiveEngineTick(events);
 
   var truthStarter = findPendingRound(events, "truth_or_dare");
   if (truthStarter) restoreTruthOrDareRound(truthStarter, events);
@@ -3605,7 +3994,7 @@ function buildShieldPayload() {
 
 function buildRedrawPayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
-  var mode = syncTruthRound.mode, tier = syncTruthRound.tier;
+  var mode = syncTruthRound.mode, tier = getEffectiveDrawTier(syncTruthRound.tier);
   var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
@@ -4719,6 +5108,7 @@ window.wheelNextTurn = function () {
     if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
     wheelTimerRunning = false;
     drawWheelCanvas(wheelRotationDeg, -1);
+    if (typeof refreshEngineSnapshot === "function") refreshEngineSnapshot();
     return;
   }
   wheelCurrentPlayer = wheelCurrentPlayer === 'john' ? 'felicity' : 'john';
@@ -4742,7 +5132,7 @@ window.wheelNextTurn = function () {
 
 function syncSpin() {
   var tierEl = document.getElementById('wheelTierSelect');
-  var tier = tierEl ? tierEl.value : 'tease';
+  var tier = getEffectiveDrawTier(tierEl ? tierEl.value : 'tease');
   var segmentIndex = Math.floor(Math.random() * 6);
   var seg = wheelSegmentDefs[tier][segmentIndex];
   var roundId = genRoundId();

@@ -455,6 +455,13 @@
     return data;
   }
 
+  // 'manual' (default) or 'adaptive' — couple-level, either partner can change it.
+  async function setProgressionMode(mode) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client.rpc("set_progression_mode", { p_mode: mode });
+    if (error) throw new Error(friendlyError(error, "Couldn't update progression mode. Please try again."));
+  }
+
   // ---- Power Cards (Truth or Dare) ----
   // A player's hand is a private table (RLS: user_id = auth.uid()), never
   // readable by their partner. buy_card/play_card are atomic RPCs — the
@@ -518,6 +525,7 @@
     getCoupleProgression: getCoupleProgression,
     createProgressionProposal: createProgressionProposal,
     respondProgression: respondProgression,
+    setProgressionMode: setProgressionMode,
     loadHand: loadHand,
     buyCard: buyCard,
     playCard: playCard
