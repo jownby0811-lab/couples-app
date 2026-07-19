@@ -328,6 +328,22 @@
       <label for="p2Input">Her 💕</label>
       <input id="p2Input" type="text" placeholder="Her name" maxlength="20" autocomplete="off">
     </div>
+
+    <div class="heat-mode-choice">
+      <div class="heat-mode-choice-label">Heat Mode</div>
+      <div class="heat-mode-cards">
+        <button type="button" class="heat-mode-card heat-mode-card-selected" id="onboardingHeatModeAdaptive" onclick="selectOnboardingHeatMode('adaptive')">
+          <div class="heat-mode-card-title">Adaptive <span class="heat-mode-card-badge">Recommended</span></div>
+          <div class="heat-mode-card-desc">Let the night build naturally.</div>
+        </button>
+        <button type="button" class="heat-mode-card" id="onboardingHeatModeManual" onclick="selectOnboardingHeatMode('manual')">
+          <div class="heat-mode-card-title">Manual</div>
+          <div class="heat-mode-card-desc">Pick your own heat anytime.</div>
+        </button>
+      </div>
+      <p class="heat-mode-choice-note">You can change this anytime in Account.</p>
+    </div>
+
     <button onclick="submitOnboarding()">Let's Play 🎮</button>
   </div>
 </div>
@@ -518,10 +534,13 @@
   <h1>Truth or Dare</h1>
   <p id="truthConnIndicator" class="conn-indicator hidden"></p>
 
-<!-- Custom listbox — a native <select>'s options can't render <img>
-     icons, so this replaces it entirely (see truthTier* functions in
-     script.js). getSelectedTier() now reads selectedTruthTier instead
-     of a DOM element, so every draw/sync/pool call site is unaffected. -->
+<!-- Custom tier control — renders one of two ways depending on the
+     player's own heat mode (see refreshTruthTierModeUI in script.js):
+     the dropdown for manual mode, or the heat display + expand panel
+     for adaptive. Both read/write the same myTierDial state, so every
+     draw/sync/pool call site is unaffected by which one is showing. A
+     native <select>'s options can't render <img> icons anyway, hence
+     the dropdown being custom in the first place. -->
 <div class="heat-tier-row">
   <div class="tier-dropdown" id="truthTierDropdown">
     <button type="button" id="truthTierTrigger" class="tier-dropdown-trigger"
@@ -545,9 +564,38 @@
       </li>
     </ul>
   </div>
-  <span id="heatAmbianceTruth" class="heat-ambiance hidden"></span>
+
+  <div class="adaptive-heat-display hidden" id="adaptiveHeatDisplay">
+    <button type="button" id="adaptiveHeatTrigger" class="tier-dropdown-trigger"
+            aria-haspopup="true" aria-expanded="false" onclick="toggleAdaptiveHeatPanel()">
+      <span id="adaptiveHeatTriggerContent" class="tier-dropdown-trigger-content"></span>
+      <span class="tier-dropdown-chevron" aria-hidden="true">&#9662;</span>
+    </button>
+    <div id="adaptiveHeatPanel" class="adaptive-heat-panel hidden">
+      <div class="adaptive-heat-arc" id="adaptiveHeatArc">
+        <div class="adaptive-heat-arc-step" data-tier="tease">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/tease-feather@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😏')">
+          <span>Tease</span>
+        </div>
+        <div class="adaptive-heat-arc-step" data-tier="foreplay">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/foreplay-flames@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🔥')">
+          <span>Foreplay</span>
+        </div>
+        <div class="adaptive-heat-arc-step" data-tier="dirty">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/dirty-heart@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😈')">
+          <span>Dirty</span>
+        </div>
+      </div>
+      <p class="adaptive-heat-caption">the night decides when you're ready</p>
+      <div class="adaptive-heat-actions">
+        <button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
+        <button type="button" id="coolItDownBtnTruth" class="cool-it-down-btn hidden" onclick="coolItDown()">Cool it down</button>
+      </div>
+    </div>
+  </div>
 </div>
-<button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
+
+<p class="tier-readout hidden" id="truthTierReadout"></p>
 
 <br>
 
@@ -948,6 +996,16 @@
     </div>
     <button onclick="handleSaveDisplayName()">Save Name</button>
     <p id="acctProfileMsg" class="auth-error"></p>
+
+    <div class="progression-mode-section">
+      <div class="progression-mode-label">Heat Mode</div>
+      <p class="auth-sub small" id="acctHeatModeDesc"></p>
+      <div class="auth-tabs progression-mode-tabs">
+        <button class="auth-tab" id="acctHeatModeManualBtn" onclick="handleSetHeatMode('manual')">Manual</button>
+        <button class="auth-tab" id="acctHeatModeAdaptiveBtn" onclick="handleSetHeatMode('adaptive')">Adaptive</button>
+      </div>
+      <p id="acctHeatModeError" class="auth-error"></p>
+    </div>
 
     <div class="pos-section-title">Your Couple</div>
     <div id="acctCoupleArea"></div>

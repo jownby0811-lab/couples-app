@@ -111,7 +111,10 @@
 
   // ---- Auth: email + password ----
 
-  async function signUp(email, password, displayName) {
+  // heatMode (optional): carries the local onboarding heat-mode choice
+  // (see selectOnboardingHeatMode in script.js) onto the new profile,
+  // same best-effort pattern as displayName below.
+  async function signUp(email, password, displayName, heatMode) {
     if (!client) throw new Error("Sign-up isn't available right now.");
     var { data, error } = await client.auth.signUp({
       email: email,
@@ -122,6 +125,9 @@
     state.session = data.session || state.session;
     if (state.session && displayName) {
       try { await updateDisplayName(displayName); } catch (e) { console.warn("Failed to persist display name after signup", e); }
+    }
+    if (state.session && heatMode) {
+      try { await setHeatMode(heatMode); } catch (e) { console.warn("Failed to persist heat mode after signup", e); }
     }
     await refreshMyCouple();
     notify();
@@ -168,13 +174,16 @@
 
   // ---- Profile ----
 
-  async function getProfile() {
+  // userId defaults to the caller's own profile; pass a partner's id to
+  // read theirs instead — RLS ("read own or partner profile") allows
+  // reading any profile belonging to a member of your own couple.
+  async function getProfile(userId) {
     if (!client || !state.session) return null;
     try {
       var { data, error } = await client
         .from("profiles")
-        .select("display_name")
-        .eq("id", state.session.user.id)
+        .select("display_name, heat_mode")
+        .eq("id", userId || state.session.user.id)
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -191,6 +200,18 @@
       .update({ display_name: name })
       .eq("id", state.session.user.id);
     if (error) throw new Error(friendlyError(error, "Couldn't save your name. Please try again."));
+  }
+
+  // 'manual' (default) or 'adaptive' — per-user, own profile only. Direct
+  // table update (RLS: "update own profile"), same pattern as
+  // updateDisplayName; no RPC needed since there's no cross-row logic.
+  async function setHeatMode(mode) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client
+      .from("profiles")
+      .update({ heat_mode: mode })
+      .eq("id", state.session.user.id);
+    if (error) throw new Error(friendlyError(error, "Couldn't save your heat mode. Please try again."));
   }
 
   // ---- Couple linking ----
@@ -515,6 +536,7 @@
     setNewPassword: setNewPassword,
     getProfile: getProfile,
     updateDisplayName: updateDisplayName,
+    setHeatMode: setHeatMode,
     createCouple: createCouple,
     joinCouple: joinCouple,
     leaveCouple: leaveCouple,
