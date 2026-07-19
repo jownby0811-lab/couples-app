@@ -2199,20 +2199,6 @@ hr {
 /* 🎡 SPIN WHEEL             */
 /* ========================= */
 
-#wheelTierSelect {
-  padding: 10px 16px;
-  border-radius: 14px;
-  background: linear-gradient(#24151d, #24151d) padding-box,
-              linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%) border-box;
-  color: white;
-  border: 1.5px solid transparent;
-  margin: 10px;
-  font-size: 16px;
-  font-family: 'Poppins', sans-serif;
-  outline: none;
-  cursor: pointer;
-}
-
 .wheel-turn-display {
   font-family: 'Playfair Display', serif;
   font-size: 1.1rem;
@@ -2247,22 +2233,44 @@ hr {
   display: block;
 }
 
-.wheel-pointer-arrow {
+/* Rose-gold pointer — a solid CSS triangle (clip-path) rather than a
+   unicode glyph, so it can carry its own glow/scale animations for the
+   per-segment "tick" pulse (spin in progress) and the larger landing
+   pulse (see pulseWheelPointerTick/pulseWheelPointerLanded). */
+.wheel-pointer {
   position: absolute;
-  top: -22px;
+  top: -13px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 30px;
+  width: 26px;
+  height: 22px;
   background: linear-gradient(135deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  clip-path: polygon(50% 100%, 4% 0%, 96% 0%);
   z-index: 5;
-  line-height: 1;
-  filter: drop-shadow(0 0 7px rgba(201,169,122,0.65));
+  filter: drop-shadow(0 2px 6px rgba(201,169,122,0.55));
 }
 
-#wheelCanvas {
+.wheel-pointer-tick {
+  animation: wheelPointerTick 0.14s ease;
+}
+
+@keyframes wheelPointerTick {
+  0%   { transform: translateX(-50%) scale(1); }
+  50%  { transform: translateX(-50%) scale(1.16) rotate(-3deg); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+
+.wheel-pointer-landed {
+  animation: wheelPointerLanded 0.55s ease;
+}
+
+@keyframes wheelPointerLanded {
+  0%   { transform: translateX(-50%) scale(1); filter: drop-shadow(0 2px 6px rgba(201,169,122,0.55)); }
+  35%  { transform: translateX(-50%) scale(1.42); filter: drop-shadow(0 0 18px rgba(201,169,122,0.95)); }
+  100% { transform: translateX(-50%) scale(1); filter: drop-shadow(0 2px 6px rgba(201,169,122,0.55)); }
+}
+
+.wheel-svg {
   border-radius: 50%;
   box-shadow:
     0 14px 48px rgba(0,0,0,0.65),
@@ -2273,13 +2281,163 @@ hr {
   height: 100%;
 }
 
-.wheel-center-pin {
+/* ---- Segments — deep navy / rose-gold / silver rotation, never two ---- */
+/* ---- adjacent slices the same color; Wildcard's ember tone is a ---- */
+/* ---- deliberate break from the pattern (see WHEEL_SEG_COLOR_CLASS). ---- */
+.wheel-segment-fill {
+  stroke: none;
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+
+.wheel-fill-navy   { fill: #1c2440; }
+.wheel-fill-rose   { fill: #6b4230; }
+.wheel-fill-silver { fill: #3a3f4a; }
+.wheel-fill-ember  { fill: #3a130c; filter: drop-shadow(0 0 10px rgba(224,122,63,0.4)); }
+
+.wheel-segment-win .wheel-segment-fill {
+  filter: brightness(1.4) saturate(1.2) drop-shadow(0 0 16px rgba(201,169,122,0.85));
+}
+
+.wheel-segment-dim .wheel-segment-fill {
+  opacity: 0.4;
+  filter: saturate(0.55) brightness(0.85);
+}
+
+.wheel-divider {
+  stroke: rgba(201,169,122,0.4);
+  stroke-width: 1.4;
+  pointer-events: none;
+}
+
+.wheel-inner-glow {
+  pointer-events: none;
+}
+
+.wheel-segment-label {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 17px;
+  fill: #e9d3ac;
+  paint-order: stroke;
+  stroke: rgba(10,6,14,0.55);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.wheel-segment-label-sm {
+  font-size: 13px;
+}
+
+.wheel-segment-glyph {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wheel-segment-glyph-box {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wheel-segment-glyph-img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+}
+
+.wheel-segment-win .wheel-segment-glyph-img {
+  filter: drop-shadow(0 0 6px rgba(201,169,122,0.9));
+}
+
+.wheel-segment-dim .wheel-segment-glyph-img {
+  opacity: 0.55;
+}
+
+.wheel-outer-ring {
+  fill: none;
+  stroke: url(#wheelRingGrad);
+  stroke-width: 5;
+}
+
+.wheel-hub-mask {
+  fill: #0a0812;
+}
+
+.wheel-hub {
+  fill: url(#wheelHubGrad);
+  stroke: rgba(255,255,255,0.2);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 12px rgba(201,169,122,0.65));
+}
+
+/* ---- Result teaser — the quick "what did we land on" card shown ---- */
+/* ---- above the wheel the instant it settles (see showWheelResultTeaser). */
+.wheel-result-teaser {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 380px;
+  margin: 10px auto 0;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(201,169,122,0.14), rgba(201,169,122,0.05));
+  border: 1px solid rgba(201,169,122,0.35);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.wheel-result-teaser.hidden {
   display: none;
+}
+
+.wheel-result-teaser-play {
+  animation: wheelResultTeaserIn 0.4s ease forwards;
+}
+
+@keyframes wheelResultTeaserIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.wheel-result-teaser-glyph-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.wheel-result-teaser-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wheel-result-teaser-name {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 16px;
+  color: #c9a97a;
+}
+
+.wheel-result-teaser-desc {
+  font-family: 'Poppins', sans-serif;
+  font-size: 12.5px;
+  color: rgba(255,245,247,0.65);
 }
 
 #wheelSpinBtn {
   margin: 28px auto 14px;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   padding: 16px 52px;
   font-size: 20px;
   font-family: 'Poppins', sans-serif;
@@ -2290,6 +2448,12 @@ hr {
   box-shadow: 0 6px 22px rgba(201,169,122,0.42);
   border-radius: 50px;
   border: none;
+}
+
+#wheelSpinBtn img.action-btn-icon {
+  width: 22px;
+  height: 22px;
+  margin-right: 0;
 }
 
 #wheelSpinBtn:disabled {

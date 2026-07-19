@@ -20,11 +20,13 @@ window.showPage = function (pageId) {
     if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
     if (typeof refreshTierReadout === "function") refreshTierReadout();
   }
-  if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
-    resizeWheelCanvas();
-    drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+  if (pageId === "wheel" && typeof initWheelPage === "function") {
+    buildWheelSvg();
+    renderWheelRotation(wheelRotationDeg);
+    renderWheelLandedState(wheelLandedSegment);
     if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
-    if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+    if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
+    if (typeof refreshTierReadout === "function") refreshTierReadout();
     if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
   }
   if (pageId === "home" && typeof initHomePage === "function") {
@@ -63,7 +65,12 @@ var ICONS = {
   soundOff:       { src: "assets/icons/ui/sound-off@64.png",                      emoji: "🔇" },
   account:        { src: "assets/icons/ui/account@64.png",                        emoji: "👤" },
   betaFeedback:   { src: "assets/icons/ui/beta-feedback@64.png",                  emoji: "💬" },
-  dareWeTryThis:  { src: "assets/icons/ui/dare-we-try-this@64.png",               emoji: "🔥" }
+  dareWeTryThis:  { src: "assets/icons/ui/dare-we-try-this@64.png",               emoji: "🔥" },
+
+  wheelManualChoice: { src: "assets/icons/wheel/manual-choice@64.png",            emoji: "🤚" },
+  wheelDirtyTalk:    { src: "assets/icons/wheel/dirty-talk@64.png",               emoji: "💬" },
+  wheelKissing:      { src: "assets/icons/wheel/kissing@64.png",                  emoji: "💋" },
+  wheelMassage:      { src: "assets/icons/wheel/massage@64.png",                  emoji: "💆" }
 };
 
 // className controls display size (see style.css); label is the alt text
@@ -847,18 +854,46 @@ function showStatus(message) {
   setTimeout(() => { status.style.opacity = "0"; }, 2000);
 }
 
-// ---- Truth or Dare tier control: per-user "dial" + effective heat ----
+// ---- Truth or Dare / Spin the Wheel tier control: per-user "dial" + ----
+// ---- effective heat ----
 // Each player has their own current tier ("dial"). The session's
 // effective (played) heat is min(my dial, partner's dial) when synced —
 // see getEffectiveHeatTier() — or just my own dial when solo/unlinked,
 // where there's no second dial to min against (byte-identical to this
 // app's pre-existing solo behavior, which never restricted tier at all).
-// Manual mode edits your dial directly via this dropdown (selectTruthTier
-// below); adaptive mode's heat display only shows it (see ADAPTIVE HEAT
-// DISPLAY further down) and moves it via the heat-up/cool-down actions.
+// Manual mode edits your dial directly via a dropdown (selectTier below);
+// adaptive mode's heat display only shows it (see ADAPTIVE HEAT DISPLAY
+// further down) and moves it via the heat-up/cool-down actions.
+//
+// Truth or Dare and Spin the Wheel each render their own instance of this
+// control — one page-name -> DOM-id lookup drives both, so the
+// interactive logic (open/close, keyboard nav, refresh) lives in exactly
+// one place instead of being duplicated per page. Truth's ids predate
+// this generalization and don't all follow the "Wheel" suffix convention
+// (its adaptive display container has no suffix at all) — kept as-is
+// rather than touching already-working markup.
 var myTierDial = "tease";
 var partnerTierDial = "tease";
-var truthTierDropdownOpen = false;
+
+var TIER_CONTROL_PAGES = ["Truth", "Wheel"];
+var TIER_CONTROL_IDS = {
+  Truth: {
+    dropdown: "truthTierDropdown", trigger: "truthTierTrigger", triggerContent: "truthTierTriggerContent",
+    listbox: "truthTierListbox", optPrefix: "truthTierOpt-",
+    adaptiveDisplay: "adaptiveHeatDisplay", adaptiveTrigger: "adaptiveHeatTrigger",
+    adaptiveTriggerContent: "adaptiveHeatTriggerContent", adaptivePanel: "adaptiveHeatPanel",
+    upBtn: "turnUpHeatBtnTruth", coolBtn: "coolItDownBtnTruth", readout: "truthTierReadout"
+  },
+  Wheel: {
+    dropdown: "wheelTierDropdown", trigger: "wheelTierTrigger", triggerContent: "wheelTierTriggerContent",
+    listbox: "wheelTierListbox", optPrefix: "wheelTierOpt-",
+    adaptiveDisplay: "adaptiveHeatDisplayWheel", adaptiveTrigger: "adaptiveHeatTriggerWheel",
+    adaptiveTriggerContent: "adaptiveHeatTriggerContentWheel", adaptivePanel: "adaptiveHeatPanelWheel",
+    upBtn: "turnUpHeatBtnWheel", coolBtn: "coolItDownBtnWheel", readout: "wheelTierReadout"
+  }
+};
+var tierDropdownOpen = { Truth: false, Wheel: false };
+var adaptiveHeatPanelOpenState = { Truth: false, Wheel: false };
 
 // Per-user heat mode ('manual' | 'adaptive') — see Backend.setHeatMode /
 // profiles.heat_mode. Seeded from localStorage (set by the onboarding
@@ -884,8 +919,8 @@ function getEffectiveHeatTier() {
   return TIER_ORDER[Math.min(myIdx, partnerIdx)];
 }
 
-function updateTruthTierTrigger() {
-  var content = document.getElementById("truthTierTriggerContent");
+function updateTierTrigger(page) {
+  var content = document.getElementById(TIER_CONTROL_IDS[page].triggerContent);
   if (!content) return;
   content.innerHTML = appIcon(myTierDial, "tier-select-icon-img", "", true) + truthTierLabel(myTierDial);
 }
@@ -893,27 +928,32 @@ function updateTruthTierTrigger() {
 // Local-only UI refresh — does not itself move the dial or send an
 // event (see setMyTierDial for the one path that does).
 function refreshTruthTierDropdownSelection() {
-  TIER_ORDER.forEach(function (t) {
-    var opt = document.getElementById("truthTierOpt-" + t);
-    if (!opt) return;
-    opt.setAttribute("aria-selected", String(t === myTierDial));
-    opt.classList.toggle("tier-dropdown-option-selected", t === myTierDial);
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    var ids = TIER_CONTROL_IDS[page];
+    TIER_ORDER.forEach(function (t) {
+      var opt = document.getElementById(ids.optPrefix + t);
+      if (!opt) return;
+      opt.setAttribute("aria-selected", String(t === myTierDial));
+      opt.classList.toggle("tier-dropdown-option-selected", t === myTierDial);
+    });
+    updateTierTrigger(page);
   });
-  updateTruthTierTrigger();
 }
 
 // Manual mode only: freely set your own dial to any tier, any direction,
 // anytime — no gating, no partner consent needed. Raising unilaterally is
 // inert until your partner's dial also reaches that tier (see the "min"
 // rule in getEffectiveHeatTier); lowering is immediate and unilateral.
-function selectTruthTier(tier) {
-  if (TIER_ORDER.indexOf(tier) === -1 || tier === myTierDial) { closeTruthTierDropdown(); return; }
+function selectTier(page, tier) {
+  if (TIER_ORDER.indexOf(tier) === -1 || tier === myTierDial) { closeTierDropdown(page); return; }
   setMyTierDial(tier, "manual_pick");
-  closeTruthTierDropdown();
+  closeTierDropdown(page);
 }
+window.selectTruthTier = function (tier) { selectTier("Truth", tier); };
+window.selectWheelTier = function (tier) { selectTier("Wheel", tier); };
 
 // The one place that actually moves MY dial — used by the manual
-// dropdown above and by the adaptive "Cool it down" action. Persisted as
+// dropdowns above and by the adaptive "Cool it down" action. Persisted as
 // a direct game_event (not the propose/respond RPC — nothing to agree
 // on for your own dial) so it survives reconnect and reaches the
 // partner's device. Plays the heat-rise ceremony only when this actually
@@ -945,34 +985,38 @@ function setMyTierDial(tier, via) {
   }
 }
 
-function openTruthTierDropdown() {
-  var panel = document.getElementById("truthTierListbox");
-  var trigger = document.getElementById("truthTierTrigger");
-  if (!panel || !trigger || truthTierDropdownOpen) return;
-  truthTierDropdownOpen = true;
+function openTierDropdown(page) {
+  var ids = TIER_CONTROL_IDS[page];
+  var panel = document.getElementById(ids.listbox);
+  var trigger = document.getElementById(ids.trigger);
+  if (!panel || !trigger || tierDropdownOpen[page]) return;
+  tierDropdownOpen[page] = true;
   panel.classList.remove("hidden");
   trigger.setAttribute("aria-expanded", "true");
-  var current = document.getElementById("truthTierOpt-" + myTierDial);
+  var current = document.getElementById(ids.optPrefix + myTierDial);
   if (current) current.focus();
 }
 
 // returnFocus defaults to true (Escape, selection); an outside tap
 // passes false so focus goes wherever the user actually tapped instead
 // of being yanked back to the trigger.
-function closeTruthTierDropdown(returnFocus) {
-  var panel = document.getElementById("truthTierListbox");
-  var trigger = document.getElementById("truthTierTrigger");
-  if (!panel || !trigger || !truthTierDropdownOpen) return;
-  truthTierDropdownOpen = false;
+function closeTierDropdown(page, returnFocus) {
+  var ids = TIER_CONTROL_IDS[page];
+  var panel = document.getElementById(ids.listbox);
+  var trigger = document.getElementById(ids.trigger);
+  if (!panel || !trigger || !tierDropdownOpen[page]) return;
+  tierDropdownOpen[page] = false;
   panel.classList.add("hidden");
   trigger.setAttribute("aria-expanded", "false");
   if (returnFocus !== false) trigger.focus();
 }
 
-function toggleTruthTierDropdown() {
-  if (truthTierDropdownOpen) closeTruthTierDropdown();
-  else openTruthTierDropdown();
+function toggleTierDropdown(page) {
+  if (tierDropdownOpen[page]) closeTierDropdown(page);
+  else openTierDropdown(page);
 }
+window.toggleTruthTierDropdown = function () { toggleTierDropdown("Truth"); };
+window.toggleWheelTierDropdown = function () { toggleTierDropdown("Wheel"); };
 
 // Adaptive mode's one direct dial action (see the expand panel in
 // ADAPTIVE HEAT DISPLAY) — immediately lowers MY OWN dial by one tier.
@@ -986,15 +1030,18 @@ window.coolItDown = function () {
   showStatus("Cooling to " + truthTierLabel(TIER_ORDER[idx - 1]));
 };
 
-function handleTruthTierTriggerKeydown(e) {
+function handleTierTriggerKeydown(page, e) {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
-    if (!truthTierDropdownOpen) openTruthTierDropdown();
+    if (!tierDropdownOpen[page]) openTierDropdown(page);
   }
 }
+window.handleTruthTierTriggerKeydown = function (e) { handleTierTriggerKeydown("Truth", e); };
+window.handleWheelTierTriggerKeydown = function (e) { handleTierTriggerKeydown("Wheel", e); };
 
-function handleTruthTierListboxKeydown(e) {
-  var options = TIER_ORDER.map(function (t) { return document.getElementById("truthTierOpt-" + t); }).filter(Boolean);
+function handleTierListboxKeydown(page, e) {
+  var ids = TIER_CONTROL_IDS[page];
+  var options = TIER_ORDER.map(function (t) { return document.getElementById(ids.optPrefix + t); }).filter(Boolean);
   var idx = options.indexOf(document.activeElement);
   if (e.key === "ArrowDown") {
     e.preventDefault();
@@ -1013,115 +1060,138 @@ function handleTruthTierListboxKeydown(e) {
   } else if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     var focused = document.activeElement;
-    if (focused && focused.dataset && focused.dataset.tier) selectTruthTier(focused.dataset.tier);
+    if (focused && focused.dataset && focused.dataset.tier) selectTier(page, focused.dataset.tier);
   } else if (e.key === "Escape") {
     e.preventDefault();
-    closeTruthTierDropdown();
+    closeTierDropdown(page);
   } else if (e.key === "Tab") {
-    closeTruthTierDropdown(false);
+    closeTierDropdown(page, false);
   }
 }
+window.handleTruthTierListboxKeydown = function (e) { handleTierListboxKeydown("Truth", e); };
+window.handleWheelTierListboxKeydown = function (e) { handleTierListboxKeydown("Wheel", e); };
 
 // ---- ADAPTIVE HEAT DISPLAY ----
 // Adaptive mode's tier control: a read-only status display (never a
-// picker — see refreshTruthTierModeUI, which shows this instead of
-// #truthTierDropdown when myHeatMode is 'adaptive') that expands to a
-// small panel showing the tease/foreplay/dirty arc, the "Turn up the
-// heat?" escalation action, and the "Cool it down" de-escalation action.
-var adaptiveHeatPanelOpen = false;
-
+// picker — see refreshTruthTierModeUI, which shows this instead of the
+// dropdown when myHeatMode is 'adaptive') that expands to a small panel
+// showing the tease/foreplay/dirty arc, the "Turn up the heat?"
+// escalation action, and the "Cool it down" de-escalation action.
 function refreshTruthTierModeUI() {
-  var dropdown = document.getElementById("truthTierDropdown");
-  var display = document.getElementById("adaptiveHeatDisplay");
-  if (!dropdown || !display) return;
-  // Adaptive mode has no experience to offer without a partner — the
-  // engine, heat-up proposals, and ceremony are all synced-only — so
-  // solo/unlinked users always get the free-pick dropdown regardless of
-  // their chosen heat mode, matching this app's existing principle that
-  // solo play stays exactly as free as it was before this feature.
-  var adaptive = myHeatMode === "adaptive" && isSyncActive();
-  dropdown.classList.toggle("hidden", adaptive);
-  display.classList.toggle("hidden", !adaptive);
-  if (adaptive) refreshAdaptiveHeatDisplay();
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    var ids = TIER_CONTROL_IDS[page];
+    var dropdown = document.getElementById(ids.dropdown);
+    var display = document.getElementById(ids.adaptiveDisplay);
+    if (!dropdown || !display) return;
+    // Adaptive mode has no experience to offer without a partner — the
+    // engine, heat-up proposals, and ceremony are all synced-only — so
+    // solo/unlinked users always get the free-pick dropdown regardless of
+    // their chosen heat mode, matching this app's existing principle that
+    // solo play stays exactly as free as it was before this feature.
+    var adaptive = myHeatMode === "adaptive" && isSyncActive();
+    dropdown.classList.toggle("hidden", adaptive);
+    display.classList.toggle("hidden", !adaptive);
+  });
+  refreshAdaptiveHeatDisplay();
 }
 
-// Updates the trigger's icon+label, the arc's dimmed/current steps, and
-// the two action buttons — called whenever myTierDial, the effective
+// Updates each page's trigger icon+label, the arc's dimmed/current steps,
+// and the two action buttons — called whenever myTierDial, the effective
 // heat, or the open-proposal state changes.
 function refreshAdaptiveHeatDisplay() {
-  var content = document.getElementById("adaptiveHeatTriggerContent");
-  if (content) content.innerHTML = appIcon(myTierDial, "tier-select-icon-img", "", true) + truthTierLabel(myTierDial);
-
   var myIdx = TIER_ORDER.indexOf(myTierDial);
-  TIER_ORDER.forEach(function (t, idx) {
-    var step = document.querySelector('.adaptive-heat-arc-step[data-tier="' + t + '"]');
-    if (!step) return;
-    step.classList.toggle("adaptive-heat-arc-step-locked", idx > myIdx);
-    step.classList.toggle("adaptive-heat-arc-step-current", idx === myIdx);
-  });
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    var ids = TIER_CONTROL_IDS[page];
+    var content = document.getElementById(ids.adaptiveTriggerContent);
+    if (content) content.innerHTML = appIcon(myTierDial, "tier-select-icon-img", "", true) + truthTierLabel(myTierDial);
 
-  var upBtn = document.getElementById("turnUpHeatBtnTruth");
-  if (upBtn) {
-    var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
-    var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
-    var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
-    if (!isSyncActive() || myHeatMode !== "adaptive" || atMax) {
-      upBtn.classList.add("hidden");
-    } else {
-      upBtn.classList.remove("hidden");
-      upBtn.disabled = hasOpenHeatProposal;
-      upBtn.innerHTML = hasOpenHeatProposal
-        ? "Asked 💌"
-        : appIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
+    var panelEl = document.getElementById(ids.adaptivePanel);
+    if (panelEl) {
+      TIER_ORDER.forEach(function (t, idx) {
+        var step = panelEl.querySelector('.adaptive-heat-arc-step[data-tier="' + t + '"]');
+        if (!step) return;
+        step.classList.toggle("adaptive-heat-arc-step-locked", idx > myIdx);
+        step.classList.toggle("adaptive-heat-arc-step-current", idx === myIdx);
+      });
     }
-  }
 
-  var coolBtn = document.getElementById("coolItDownBtnTruth");
-  if (coolBtn) {
-    coolBtn.classList.toggle("hidden", !isSyncActive() || myHeatMode !== "adaptive" || myIdx <= 0);
-  }
+    var upBtn = document.getElementById(ids.upBtn);
+    if (upBtn) {
+      var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
+      var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
+      var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
+      if (!isSyncActive() || myHeatMode !== "adaptive" || atMax) {
+        upBtn.classList.add("hidden");
+      } else {
+        upBtn.classList.remove("hidden");
+        upBtn.disabled = hasOpenHeatProposal;
+        upBtn.innerHTML = hasOpenHeatProposal
+          ? "Asked 💌"
+          : appIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
+      }
+    }
+
+    var coolBtn = document.getElementById(ids.coolBtn);
+    if (coolBtn) {
+      coolBtn.classList.toggle("hidden", !isSyncActive() || myHeatMode !== "adaptive" || myIdx <= 0);
+    }
+  });
 }
 
-function openAdaptiveHeatPanel() {
-  var panel = document.getElementById("adaptiveHeatPanel");
-  var trigger = document.getElementById("adaptiveHeatTrigger");
-  if (!panel || !trigger || adaptiveHeatPanelOpen) return;
-  adaptiveHeatPanelOpen = true;
+function openAdaptiveHeatPanel(page) {
+  var ids = TIER_CONTROL_IDS[page];
+  var panel = document.getElementById(ids.adaptivePanel);
+  var trigger = document.getElementById(ids.adaptiveTrigger);
+  if (!panel || !trigger || adaptiveHeatPanelOpenState[page]) return;
+  adaptiveHeatPanelOpenState[page] = true;
   panel.classList.remove("hidden");
   trigger.setAttribute("aria-expanded", "true");
 }
 
-function closeAdaptiveHeatPanel(returnFocus) {
-  var panel = document.getElementById("adaptiveHeatPanel");
-  var trigger = document.getElementById("adaptiveHeatTrigger");
-  if (!panel || !trigger || !adaptiveHeatPanelOpen) return;
-  adaptiveHeatPanelOpen = false;
+function closeAdaptiveHeatPanel(page, returnFocus) {
+  var ids = TIER_CONTROL_IDS[page];
+  var panel = document.getElementById(ids.adaptivePanel);
+  var trigger = document.getElementById(ids.adaptiveTrigger);
+  if (!panel || !trigger || !adaptiveHeatPanelOpenState[page]) return;
+  adaptiveHeatPanelOpenState[page] = false;
   panel.classList.add("hidden");
   trigger.setAttribute("aria-expanded", "false");
   if (returnFocus !== false) trigger.focus();
 }
 
-function toggleAdaptiveHeatPanel() {
-  if (adaptiveHeatPanelOpen) closeAdaptiveHeatPanel();
-  else openAdaptiveHeatPanel();
+// Named ...ForPage (not toggleAdaptiveHeatPanel) so it can't collide with
+// window.toggleAdaptiveHeatPanel below — a top-level function declaration
+// and a same-named window.* assignment share one binding, so a same-named
+// core function here would silently turn into infinite self-recursion
+// the moment the window.* alias below reassigns it.
+function toggleAdaptiveHeatPanelForPage(page) {
+  if (adaptiveHeatPanelOpenState[page]) closeAdaptiveHeatPanel(page);
+  else openAdaptiveHeatPanel(page);
 }
+window.toggleAdaptiveHeatPanelTruth = function () { toggleAdaptiveHeatPanelForPage("Truth"); };
+window.toggleAdaptiveHeatPanelWheel = function () { toggleAdaptiveHeatPanelForPage("Wheel"); };
+// Pre-existing onclick markup on the Truth page calls this bare name.
+window.toggleAdaptiveHeatPanel = window.toggleAdaptiveHeatPanelTruth;
 
 // The "You: X · Partner: Y · Playing at: Z" readout shown under both
-// tier controls — synced only, so a raised dial that changes nothing
-// (partner hasn't caught up) reads as by-design rather than broken.
+// pages' tier controls — synced only, so a raised dial that changes
+// nothing (partner hasn't caught up) reads as by-design rather than
+// broken.
 function refreshTierReadout() {
-  var el = document.getElementById("truthTierReadout");
-  if (!el) return;
-  if (!isSyncActive()) { el.classList.add("hidden"); return; }
-  el.classList.remove("hidden");
-  var myName = gameSyncMyName || "You";
-  var partnerName = gameSyncPartnerName || "Partner";
-  el.innerHTML =
-    "<span>" + escapeHtml(myName) + ": " + truthTierLabel(myTierDial) + "</span>" +
-    '<span class="tier-readout-sep">&middot;</span>' +
-    "<span>" + escapeHtml(partnerName) + ": " + truthTierLabel(partnerTierDial) + "</span>" +
-    '<span class="tier-readout-sep">&middot;</span>' +
-    '<span class="tier-readout-effective">Playing at: ' + truthTierLabel(getEffectiveHeatTier()) + "</span>";
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    var el = document.getElementById(TIER_CONTROL_IDS[page].readout);
+    if (!el) return;
+    if (!isSyncActive()) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    var myName = gameSyncMyName || "You";
+    var partnerName = gameSyncPartnerName || "Partner";
+    el.innerHTML =
+      "<span>" + escapeHtml(myName) + ": " + truthTierLabel(myTierDial) + "</span>" +
+      '<span class="tier-readout-sep">&middot;</span>' +
+      "<span>" + escapeHtml(partnerName) + ": " + truthTierLabel(partnerTierDial) + "</span>" +
+      '<span class="tier-readout-sep">&middot;</span>' +
+      '<span class="tier-readout-effective">Playing at: ' + truthTierLabel(getEffectiveHeatTier()) + "</span>";
+  });
 }
 
 window.toggleMenu = function () {
@@ -2522,89 +2592,47 @@ function getHeatCeilingForPool() {
   return getEffectiveHeatTier();
 }
 
-// Spin the Wheel keeps its own native <select>, independent of Truth or
-// Dare's per-mode tier control (out of scope for the manual/adaptive
-// rebuild) — still just "pick within what's unlocked," clamped against
-// the same effective heat. Truth or Dare's own dial is never clamped —
-// manual mode is explicitly ungated ("any tier, anytime"), and adaptive
-// mode's dial only ever moves via the heat-up/cool-down actions.
+// Personalize keeps its own native <select> to filter the browse list by
+// tier — a separate concept from the per-user dial system that now
+// drives both Truth or Dare and Spin the Wheel (see TIER_CONTROL_PAGES
+// above). Still just "pick within what's unlocked," clamped against the
+// same effective heat.
 function updateTierSelectOptions() {
   var ceiling = getHeatCeilingForPool();
   var ceilingIdx = ceiling ? TIER_ORDER.indexOf(ceiling) : TIER_ORDER.length - 1;
 
-  var wheelSel = document.getElementById("wheelTierSelect");
-  if (wheelSel) {
-    Array.prototype.forEach.call(wheelSel.options, function (opt) {
+  var sel = document.getElementById("personalizeTierSelect");
+  if (sel) {
+    Array.prototype.forEach.call(sel.options, function (opt) {
       opt.disabled = TIER_ORDER.indexOf(opt.value) > ceilingIdx;
     });
-    if (TIER_ORDER.indexOf(wheelSel.value) > ceilingIdx) {
-      wheelSel.value = TIER_ORDER[ceilingIdx];
+    if (TIER_ORDER.indexOf(sel.value) > ceilingIdx) {
+      sel.value = TIER_ORDER[ceilingIdx];
     }
   }
 
   refreshTierSelectIcons();
 }
 
-// Keeps each remaining tier <select>'s companion icon badge (see
-// GAMEPLAY_ICONS) in sync with its current value — covers both
-// user-driven onchange events and the programmatic ceiling clamp above,
-// which sets .value directly and so never fires a change event on its
-// own. Truth or Dare's own trigger icon is handled by
-// updateTruthTierTrigger() instead, since it isn't a <select>.
+// Keeps Personalize's tier <select> companion icon badge (see ICONS) in
+// sync with its current value — covers both user-driven onchange events
+// and the programmatic ceiling clamp above, which sets .value directly
+// and so never fires a change event on its own. Truth or Dare's and Spin
+// the Wheel's own trigger icons are handled by updateTierTrigger()
+// instead, since neither is a <select> anymore.
 function refreshTierSelectIcons() {
-  [
-    ["personalizeTierSelect", "personalizeTierSelectIcon"],
-    ["wheelTierSelect", "wheelTierSelectIcon"]
-  ].forEach(function (pair) {
-    var sel = document.getElementById(pair[0]);
-    var icon = document.getElementById(pair[1]);
-    if (!sel || !icon) return;
-    icon.innerHTML = appIcon(sel.value, "tier-select-icon-img", "", true);
-  });
+  var sel = document.getElementById("personalizeTierSelect");
+  var icon = document.getElementById("personalizeTierSelectIcon");
+  if (!sel || !icon) return;
+  icon.innerHTML = appIcon(sel.value, "tier-select-icon-img", "", true);
 }
 
-// "Turn up the heat?" on Spin the Wheel — shown regardless of heat mode
-// (Wheel's tier control wasn't part of the manual/adaptive rebuild, so
-// it keeps its pre-existing behavior). Truth or Dare's own turn-up-heat
-// action lives inside the adaptive heat display's expand panel instead
-// (see ADAPTIVE HEAT DISPLAY) and only ever shows for adaptive-mode
-// users — see refreshAdaptiveHeatDisplay. Hidden entirely for
-// solo/unlinked users and once already at max effective heat. While an
-// open heat proposal exists, it reads as answered-already-asked
-// (identical regardless of who proposed it), same as a locked tag's
-// "asked 💌" badge.
-function updateWheelTurnUpHeatButton() {
-  var btn = document.getElementById("turnUpHeatBtnWheel");
-  if (!btn) return;
-  var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
-  var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
-  var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
-  if (!isSyncActive() || atMax) {
-    btn.classList.add("hidden");
-    return;
-  }
-  btn.classList.remove("hidden");
-  btn.disabled = hasOpenHeatProposal;
-  btn.innerHTML = hasOpenHeatProposal
-    ? "Asked 💌"
-    : appIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
-}
-
-// Ambiance only — the current effective tier shown as a warm little cue
-// on Spin the Wheel, never a rank/count/progress framing. Truth or
-// Dare's own tier state is shown by its dropdown (manual) or heat
-// display (adaptive) directly instead — see refreshAdaptiveHeatDisplay.
-var TIER_AMBIANCE_LABEL = { tease: "Tease", foreplay: "Foreplay", dirty: "Dirty" };
-
+// Turn-up-heat/cool-down buttons and the ambiance cue both now live
+// inside each page's adaptive heat display (see refreshAdaptiveHeatDisplay)
+// instead of a page-specific always-visible affordance — this is just the
+// legacy entry point several call sites still use.
 function updateHeatAmbianceUI() {
-  updateWheelTurnUpHeatButton();
   if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
-  var el = document.getElementById("heatAmbianceWheel");
-  if (!el) return;
-  if (!isSyncActive()) { el.classList.add("hidden"); return; }
-  var tier = getEffectiveHeatTier();
-  el.innerHTML = "🕯 " + appIcon(tier, "ambiance-icon", "", true) + (TIER_AMBIANCE_LABEL[tier] || tier);
-  el.classList.remove("hidden");
 }
 
 function getAllDareTags() {
@@ -4049,19 +4077,24 @@ function applySyncVisibility() {
   if (turnEl && synced) turnEl.innerText = "Either of you can go 🎲";
   else if (turnEl) updateTurnDisplay();
   var wheelTurnEl = document.getElementById("wheelTurnDisplay");
-  if (wheelTurnEl && synced) wheelTurnEl.innerText = "Either of you can spin 🎡";
+  if (wheelTurnEl && synced) wheelTurnEl.innerText = "Either partner can spin";
   else if (wheelTurnEl) updateWheelTurnDisplay();
   updateScoreDisplay();
   updateWheelScoreDisplay();
   if (typeof updateCardMenuVisibility === "function") updateCardMenuVisibility();
 }
 
+// Points row — plain names and numbers with the same rose-gold middot
+// separator as the tier readout, not a flame-emoji scoreboard.
 function updateWheelScoreDisplay() {
   var el = document.getElementById("wheelScoreDisplay");
   if (!el) return;
   if (!isSyncActive()) { el.classList.add("hidden"); return; }
   el.classList.remove("hidden");
-  el.innerText = (gameSyncMyName || "You") + ": " + syncScores.mine + " 🔥  |  " + (gameSyncPartnerName || "Partner") + ": " + syncScores.partner + " 🔥";
+  el.innerHTML =
+    "<span>" + escapeHtml(gameSyncMyName || "You") + ": " + syncScores.mine + "</span>" +
+    '<span class="tier-readout-sep">&middot;</span>' +
+    "<span>" + escapeHtml(gameSyncPartnerName || "Partner") + ": " + syncScores.partner + "</span>";
 }
 
 function handleGameBackendChange() {
@@ -5064,28 +5097,33 @@ document.addEventListener("click", function (e) {
       window.toggleCardMenu();
     }
   }
-  if (typeof truthTierDropdownOpen !== "undefined" && truthTierDropdownOpen) {
-    var tierPanel = document.getElementById("truthTierListbox");
-    var tierTrigger = document.getElementById("truthTierTrigger");
-    if (!isInside(tierPanel) && !isInside(tierTrigger)) {
-      closeTruthTierDropdown(false);
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    var ids = TIER_CONTROL_IDS[page];
+    if (tierDropdownOpen[page]) {
+      var tierPanel = document.getElementById(ids.listbox);
+      var tierTrigger = document.getElementById(ids.trigger);
+      if (!isInside(tierPanel) && !isInside(tierTrigger)) {
+        closeTierDropdown(page, false);
+      }
     }
-  }
-  if (typeof adaptiveHeatPanelOpen !== "undefined" && adaptiveHeatPanelOpen) {
-    var heatPanel = document.getElementById("adaptiveHeatPanel");
-    var heatTrigger = document.getElementById("adaptiveHeatTrigger");
-    if (!isInside(heatPanel) && !isInside(heatTrigger)) {
-      closeAdaptiveHeatPanel(false);
+    if (adaptiveHeatPanelOpenState[page]) {
+      var heatPanel = document.getElementById(ids.adaptivePanel);
+      var heatTrigger = document.getElementById(ids.adaptiveTrigger);
+      if (!isInside(heatPanel) && !isInside(heatTrigger)) {
+        closeAdaptiveHeatPanel(page, false);
+      }
     }
-  }
+  });
 });
 
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
   if (isLeftMenuOpen()) window.toggleMenu();
   if (typeof cardMenuOpen !== "undefined" && cardMenuOpen) window.toggleCardMenu();
-  if (typeof truthTierDropdownOpen !== "undefined" && truthTierDropdownOpen) closeTruthTierDropdown();
-  if (typeof adaptiveHeatPanelOpen !== "undefined" && adaptiveHeatPanelOpen) closeAdaptiveHeatPanel();
+  TIER_CONTROL_PAGES.forEach(function (page) {
+    if (tierDropdownOpen[page]) closeTierDropdown(page);
+    if (adaptiveHeatPanelOpenState[page]) closeAdaptiveHeatPanel(page);
+  });
 });
 
 // Swipe toward the menu's own hinge edge closes it. Listens only on the
@@ -5568,47 +5606,160 @@ var wheelLandedSegment = -1;
 var wheelTimerInterval = null;
 var wheelTimerSeconds = 0;
 var wheelTimerRunning = false;
+var wheelHasSpunOnce = false;
 
-var wheelSegmentDefs = {
-  tease: [
-    { label: 'Kissing',    emoji: '💋', tag: 'kissing'    },
-    { label: 'Teasing',    emoji: '😏', tag: 'teasing'    },
-    { label: 'Massage',    emoji: '💆', tag: 'massage'    },
-    { label: 'Manual',     emoji: '🤚', tag: 'manual'     },
-    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
-    { label: 'Position',   emoji: '🔀', tag: 'position'   }
-  ],
-  foreplay: [
-    { label: 'Oral',       emoji: '👄', tag: 'oral'       },
-    { label: 'Manual',     emoji: '🤚', tag: 'manual'     },
-    { label: 'Teasing',    emoji: '😏', tag: 'teasing'    },
-    { label: 'Toys',       emoji: '🧸', tag: 'toys'       },
-    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
-    { label: 'Position',   emoji: '🔀', tag: 'position'   }
-  ],
-  dirty: [
-    { label: 'Oral',       emoji: '👄', tag: 'oral'       },
-    { label: 'Bondage',    emoji: '🔗', tag: 'bondage'    },
-    { label: 'Spanking',   emoji: '👋', tag: 'spanking'   },
-    { label: 'Toys',       emoji: '🧸', tag: 'toys'       },
-    { label: 'Dirty Talk', emoji: '💬', tag: 'dirty-talk' },
-    { label: 'Position',   emoji: '🔀', tag: 'position'   }
-  ]
-};
+// Fixed category segments — no longer keyed by tier (see index.html Wheel
+// section comment / PR notes: the wheel's category set is now the same
+// regardless of the player's current heat tier; only the DARES drawn for
+// a given category vary by tier, same as everywhere else in the app).
+// Wildcard has no tag: it draws from the full effective-heat dare pool,
+// same shape as a plain untagged "Dare" draw elsewhere in the app.
+var WHEEL_SEGMENTS = [
+  { key: 'manual',     label: 'Manual',     tag: 'manual',     iconKey: 'wheelManualChoice', tagline: 'Hands-on, your way.' },
+  { key: 'dirty-talk', label: 'Dirty Talk', tag: 'dirty-talk', iconKey: 'wheelDirtyTalk',     tagline: "Say what you're thinking.", sm: true },
+  { key: 'position',   label: 'Position',   tag: 'position',   iconKey: 'positions',          tagline: 'A new position to try.' },
+  { key: 'kissing',    label: 'Kissing',    tag: 'kissing',    iconKey: 'wheelKissing',        tagline: 'Slow down and kiss.' },
+  { key: 'teasing',    label: 'Teasing',    tag: 'teasing',    iconKey: 'tease',               tagline: 'Build it up slowly.' },
+  { key: 'massage',    label: 'Massage',    tag: 'massage',    iconKey: 'wheelMassage',        tagline: 'Hands-on and unhurried.' },
+  { key: 'wildcard',   label: 'Wildcard',   tag: null,         iconKey: 'dareWeTryThis',       tagline: 'Anything from your deck.' }
+];
+var WHEEL_SEG_COUNT = WHEEL_SEGMENTS.length;
+var WHEEL_SEG_ANGLE = 360 / WHEEL_SEG_COUNT;
+// The six standard segments alternate navy / rose-gold / silver so no two
+// adjacent slices share a color; Wildcard's ember tone is deliberately
+// off-rotation (see index.html/style.css comments).
+var WHEEL_SEG_COLOR_CLASS = ['navy', 'rose', 'silver', 'navy', 'rose', 'silver', 'ember'].map(function (c) {
+  return 'wheel-fill-' + c;
+});
+
+var WHEEL_CX = 190, WHEEL_CY = 190, WHEEL_OUTER_R = 182;
+var wheelSvgBuilt = false;
+var wheelSegmentEls = [];
+var wheelLastTickBucket = null;
+
+function wheelPolar(cx, cy, r, angleDeg) {
+  var a = angleDeg * Math.PI / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+
+function wheelWedgePathD(startAngle, endAngle) {
+  var p1 = wheelPolar(WHEEL_CX, WHEEL_CY, WHEEL_OUTER_R, startAngle);
+  var p2 = wheelPolar(WHEEL_CX, WHEEL_CY, WHEEL_OUTER_R, endAngle);
+  return 'M ' + WHEEL_CX + ',' + WHEEL_CY +
+    ' L ' + p1.x.toFixed(2) + ',' + p1.y.toFixed(2) +
+    ' A ' + WHEEL_OUTER_R + ',' + WHEEL_OUTER_R + ' 0 0,1 ' + p2.x.toFixed(2) + ',' + p2.y.toFixed(2) + ' Z';
+}
+
+// Builds the wheel once as static SVG — segments never change shape after
+// this, only the rotating group's transform (spin) and each segment's
+// dim/landed classes (result drama) change at runtime. Labels and glyphs
+// are children of each segment's own rotated group, so they turn WITH
+// their segment exactly like the physical wedge does.
+function buildWheelSvg() {
+  var svg = document.getElementById('wheelSvg');
+  if (!svg || wheelSvgBuilt) return;
+
+  var segmentsHtml = WHEEL_SEGMENTS.map(function (seg, i) {
+    var startAngle = i * WHEEL_SEG_ANGLE;
+    var endAngle = startAngle + WHEEL_SEG_ANGLE;
+    var midAngle = startAngle + WHEEL_SEG_ANGLE / 2;
+    var radialRotate = 'rotate(' + (midAngle + 90) + ' ' + WHEEL_CX + ' ' + WHEEL_CY + ')';
+    var labelY = WHEEL_CY - WHEEL_OUTER_R * 0.56;
+    var glyphR = WHEEL_OUTER_R * 0.79;
+    var glyphSize = 22;
+
+    return '' +
+      '<g class="wheel-segment" data-index="' + i + '">' +
+        '<path class="wheel-segment-fill ' + WHEEL_SEG_COLOR_CLASS[i] + '" d="' + wheelWedgePathD(startAngle, endAngle) + '"></path>' +
+        '<text class="wheel-segment-label' + (seg.sm ? ' wheel-segment-label-sm' : '') + '" transform="' + radialRotate + '" x="' + WHEEL_CX + '" y="' + labelY + '" text-anchor="middle">' + escapeHtml(seg.label) + '</text>' +
+        '<foreignObject class="wheel-segment-glyph" transform="' + radialRotate + '" x="' + (WHEEL_CX - glyphSize / 2) + '" y="' + (WHEEL_CY - glyphR - glyphSize / 2) + '" width="' + glyphSize + '" height="' + glyphSize + '">' +
+          '<div xmlns="http://www.w3.org/1999/xhtml" class="wheel-segment-glyph-box">' + appIcon(seg.iconKey, "wheel-segment-glyph-img", "", true) + '</div>' +
+        '</foreignObject>' +
+      '</g>';
+  }).join('');
+
+  var dividersHtml = WHEEL_SEGMENTS.map(function (_, i) {
+    var p = wheelPolar(WHEEL_CX, WHEEL_CY, WHEEL_OUTER_R, i * WHEEL_SEG_ANGLE);
+    return '<line class="wheel-divider" x1="' + WHEEL_CX + '" y1="' + WHEEL_CY + '" x2="' + p.x.toFixed(2) + '" y2="' + p.y.toFixed(2) + '"></line>';
+  }).join('');
+
+  svg.innerHTML =
+    '<defs>' +
+      '<radialGradient id="wheelInnerGlow" cx="50%" cy="50%" r="50%">' +
+        '<stop offset="0%" stop-color="#c9a97a" stop-opacity="0.28"></stop>' +
+        '<stop offset="100%" stop-color="#c9a97a" stop-opacity="0"></stop>' +
+      '</radialGradient>' +
+      '<linearGradient id="wheelRingGrad" x1="0%" y1="0%" x2="100%" y2="0%">' +
+        '<stop offset="0%" stop-color="#c9a97a"></stop>' +
+        '<stop offset="43%" stop-color="#c9a97a"></stop>' +
+        '<stop offset="68%" stop-color="#b8bcc4"></stop>' +
+        '<stop offset="100%" stop-color="#c8cdd6"></stop>' +
+      '</linearGradient>' +
+      '<radialGradient id="wheelHubGrad" cx="35%" cy="35%" r="70%">' +
+        '<stop offset="0%" stop-color="#c9a97a"></stop>' +
+        '<stop offset="100%" stop-color="#c8cdd6"></stop>' +
+      '</radialGradient>' +
+    '</defs>' +
+    '<circle class="wheel-inner-glow" cx="' + WHEEL_CX + '" cy="' + WHEEL_CY + '" r="' + (WHEEL_OUTER_R * 0.9) + '" fill="url(#wheelInnerGlow)"></circle>' +
+    '<g id="wheelRotor" class="wheel-rotor">' +
+      segmentsHtml +
+      dividersHtml +
+    '</g>' +
+    '<circle class="wheel-outer-ring" cx="' + WHEEL_CX + '" cy="' + WHEEL_CY + '" r="' + (WHEEL_OUTER_R + 2) + '"></circle>' +
+    '<circle class="wheel-hub-mask" cx="' + WHEEL_CX + '" cy="' + WHEEL_CY + '" r="26"></circle>' +
+    '<circle class="wheel-hub" cx="' + WHEEL_CX + '" cy="' + WHEEL_CY + '" r="17"></circle>';
+
+  wheelSvgBuilt = true;
+  wheelSegmentEls = Array.prototype.slice.call(svg.querySelectorAll('.wheel-segment'));
+}
+
+function renderWheelRotation(deg) {
+  var rotor = document.getElementById('wheelRotor');
+  if (rotor) rotor.setAttribute('transform', 'rotate(' + deg + ' ' + WHEEL_CX + ' ' + WHEEL_CY + ')');
+}
+
+// Result drama (landing only): the winning wedge brightens, the rest dim.
+// landedSeg === -1 clears both states (mid-spin / fresh page load).
+function renderWheelLandedState(landedSeg) {
+  wheelSegmentEls.forEach(function (el, i) {
+    el.classList.toggle('wheel-segment-win', i === landedSeg);
+    el.classList.toggle('wheel-segment-dim', landedSeg !== -1 && i !== landedSeg);
+  });
+}
+
+function pulseWheelPointerTick() {
+  var pointer = document.querySelector('.wheel-pointer');
+  if (!pointer) return;
+  pointer.classList.remove('wheel-pointer-tick');
+  void pointer.offsetWidth;
+  pointer.classList.add('wheel-pointer-tick');
+}
+
+function pulseWheelPointerLanded() {
+  var pointer = document.querySelector('.wheel-pointer');
+  if (!pointer) return;
+  pointer.classList.remove('wheel-pointer-landed');
+  void pointer.offsetWidth;
+  pointer.classList.add('wheel-pointer-landed');
+  if (navigator.vibrate) {
+    try { navigator.vibrate(30); } catch (e) { /* unsupported/blocked — silently skip */ }
+  }
+}
+
+function setWheelSpinBtnState(state) {
+  var label = document.getElementById('wheelSpinBtnLabel');
+  if (!label) return;
+  label.textContent = state === 'spinning' ? 'Spinning…' : (wheelHasSpunOnce ? 'Spin Again' : 'Spin');
+}
 
 function initWheelPage() {
   wheelCurrentPlayer = 'john';
   wheelRotationDeg = 0;
+  buildWheelSvg();
   updateWheelTurnDisplay();
-  resizeWheelCanvas();
-  drawWheelCanvas(0, -1);
-  // Canvas text doesn't wait for web fonts on its own — force a crisp
-  // redraw once the italic Playfair Display face has actually loaded.
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(function () {
-      drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
-    });
-  }
+  renderWheelRotation(0);
+  renderWheelLandedState(-1);
+  setWheelSpinBtnState('idle');
 }
 
 function updateWheelTurnDisplay() {
@@ -5621,181 +5772,33 @@ function updateWheelTurnDisplay() {
   }
 }
 
-window.wheelTierChanged = function () {
-  drawWheelCanvas(wheelRotationDeg, -1);
-};
-
-var wheelResizeTimer = null;
-window.addEventListener('resize', function () {
-  if (wheelResizeTimer) clearTimeout(wheelResizeTimer);
-  wheelResizeTimer = setTimeout(function () {
-    var wheelSection = document.getElementById('wheel');
-    if (wheelSection && wheelSection.classList.contains('active')) {
-      resizeWheelCanvas();
-      drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
-    }
-  }, 150);
-});
-
-function easeOutCubicWheel(t) {
-  return 1 - Math.pow(1 - t, 3);
+// The tier every wheel draw comes from — see getHeatCeilingForPool() and
+// getEffectiveHeatTier(). A round already in flight (mine or the
+// partner's) keeps the tier it was started with, exactly like the old
+// select-driven code froze tierEl.value for the duration of a round —
+// just read from the round's own recorded tier instead of a hidden
+// <select>'s .value now that the native select is gone (see PR notes).
+function getWheelTier() {
+  if (isSyncActive() && syncWheelRound) return syncWheelRound.tier;
+  return getEffectiveDrawTier(getEffectiveHeatTier());
 }
 
-// Fits an (optionally two-word) segment label into the available chord
-// width by shrinking the italic Playfair Display size, then draws it with
-// a soft rose-gold glow behind high-contrast dark fill. Auto-fit keeps this
-// legible regardless of exact glyph metrics (script/serif fonts vary).
-function drawWheelSegmentLabel(ctx, label, availWidth, baseSize, minSize) {
-  var parts = label.indexOf(' ') !== -1 ? label.split(' ') : [label];
-  var size = baseSize;
-  function setFont(s) { ctx.font = 'italic 700 ' + s + 'px "Playfair Display", serif'; }
-  function widestPart() {
-    var w = 0;
-    parts.forEach(function (p) { w = Math.max(w, ctx.measureText(p).width); });
-    return w;
-  }
-  setFont(size);
-  while (size > minSize && widestPart() > availWidth) {
-    size -= 1;
-    setFont(size);
-  }
-  ctx.shadowColor = 'rgba(201,169,122,0.65)';
-  ctx.shadowBlur = Math.max(3, Math.round(size * 0.22));
-  ctx.fillStyle = '#1b1008';
-  if (parts.length === 2) {
-    var lineGap = size * 0.98;
-    ctx.fillText(parts[0], 0, -lineGap / 2);
-    ctx.fillText(parts[1], 0, lineGap / 2);
-  } else {
-    ctx.fillText(parts[0], 0, 0);
-  }
-  ctx.shadowBlur = 0;
-}
-
-function resizeWheelCanvas() {
-  var canvas = document.getElementById('wheelCanvas');
-  var wrapper = document.querySelector('.wheel-wrapper');
-  if (!canvas || !wrapper) return;
-  var size = wrapper.clientWidth;
-  if (!size) return;
-  var dpr = window.devicePixelRatio || 1;
-  var target = Math.round(size * dpr);
-  if (canvas.width !== target) {
-    canvas.width = target;
-    canvas.height = target;
-  }
-}
-
-function drawWheelCanvas(rotDeg, landedSeg) {
-  var canvas = document.getElementById('wheelCanvas');
-  if (!canvas) return;
-  var ctx = canvas.getContext('2d');
-  var dpr = window.devicePixelRatio || 1;
-  var W = canvas.width / dpr, H = canvas.height / dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  var cx = W / 2, cy = H / 2;
-  var outerR = cx - 5;
-  var numSeg = 6;
-  var arcAngle = (2 * Math.PI) / numSeg;
-  var rot = rotDeg * Math.PI / 180;
-
-  ctx.clearRect(0, 0, W, H);
-
-  var tierEl = document.getElementById('wheelTierSelect');
-  var tier = tierEl ? tierEl.value : 'tease';
-  var segs = wheelSegmentDefs[tier];
-
-  for (var i = 0; i < numSeg; i++) {
-    var startAngle = rot + i * arcAngle;
-    var endAngle = startAngle + arcAngle;
-    var isLanded = (i === landedSeg);
-
-    // Segment fill
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, outerR, startAngle, endAngle);
-    ctx.closePath();
-    if (isLanded) {
-      ctx.shadowColor = i % 2 === 0 ? 'rgba(201,169,122,1)' : 'rgba(210,215,224,1)';
-      ctx.shadowBlur = 28;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(220,196,155,1)' : 'rgba(228,233,244,1)';
-    } else {
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(201,169,122,1)' : 'rgba(210,215,224,1)';
-    }
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Divider stroke
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, outerR, startAngle, endAngle);
-    ctx.closePath();
-    ctx.strokeStyle = 'rgba(8,6,16,0.72)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    // Label at segment center — elegant italic serif, no emoji, sized to
-    // the wheel and auto-fit to the segment so it never gets clipped.
-    var midAngle = rot + (i + 0.5) * arcAngle;
-    var labelR = outerR * 0.62;
-    var textX = cx + Math.cos(midAngle) * labelR;
-    var textY = cy + Math.sin(midAngle) * labelR;
-    var availWidth = 2 * labelR * Math.sin(arcAngle / 2) * 0.82;
-    var baseFontSize = Math.max(14, Math.round(outerR * 0.16));
-
-    ctx.save();
-    ctx.translate(textX, textY);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    drawWheelSegmentLabel(ctx, segs[i].label, availWidth, baseFontSize, 11);
-    ctx.restore();
-  }
-
-  // Chrome gradient outer ring
-  var ringGrad = ctx.createLinearGradient(cx - outerR, cy, cx + outerR, cy);
-  ringGrad.addColorStop(0,    '#c9a97a');
-  ringGrad.addColorStop(0.43, '#c9a97a');
-  ringGrad.addColorStop(0.68, '#b8bcc4');
-  ringGrad.addColorStop(1,    '#c8cdd6');
-  ctx.beginPath();
-  ctx.arc(cx, cy, outerR + 2, 0, 2 * Math.PI);
-  ctx.strokeStyle = ringGrad;
-  ctx.lineWidth = 5;
-  ctx.stroke();
-
-  // Dark ring to mask segment edges at center
-  ctx.beginPath();
-  ctx.arc(cx, cy, 22, 0, 2 * Math.PI);
-  ctx.fillStyle = 'rgba(10,8,18,1)';
-  ctx.fill();
-
-  // Center pin drawn at exact mathematical center (cx, cy)
-  var pinR = 15;
-  var pinGrad = ctx.createLinearGradient(cx - pinR, cy - pinR, cx + pinR, cy + pinR);
-  pinGrad.addColorStop(0, '#c9a97a');
-  pinGrad.addColorStop(1, '#c8cdd6');
-  ctx.shadowColor = 'rgba(201,169,122,0.7)';
-  ctx.shadowBlur = 16;
-  ctx.beginPath();
-  ctx.arc(cx, cy, pinR, 0, 2 * Math.PI);
-  ctx.fillStyle = pinGrad;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.beginPath();
-  ctx.arc(cx, cy, pinR, 0, 2 * Math.PI);
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+function easeOutBackWheel(t) {
+  var c1 = 1.2, c3 = c1 + 1;
+  var x = t - 1;
+  return 1 + c3 * x * x * x + c1 * x * x;
 }
 
 function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
   var spinBtn = document.getElementById('wheelSpinBtn');
   if (spinBtn) spinBtn.disabled = true;
+  setWheelSpinBtnState('spinning');
 
   document.getElementById('wheelResultArea').style.display = 'none';
   document.getElementById('wheelTimerArea').style.display = 'none';
   document.getElementById('wheelNextTurnBtn').style.display = 'none';
+  var teaser = document.getElementById('wheelResultTeaser');
+  if (teaser) teaser.classList.add('hidden');
   var judgeSection = document.getElementById('wheelJudgeSection');
   var waitSection = document.getElementById('wheelWaitSection');
   if (judgeSection) judgeSection.style.display = 'none';
@@ -5806,10 +5809,12 @@ function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
   wheelIsSpinning = true;
   wheelLandedSegment = segmentIndex;
   wheelPendingForcedCard = forcedCard || null;
+  renderWheelLandedState(-1);
 
-  // Pointer at top = 270° screen. Segment i center = (i+0.5)*60° local.
-  // To land: rot + (i+0.5)*60 ≡ 270 (mod 360) → targetNorm = (270 - (i+0.5)*60) mod 360
-  var segAngle = 60;
+  // Pointer at top = 270° screen. Segment i center = (i+0.5)*segAngle
+  // local. To land: rot + (i+0.5)*segAngle ≡ 270 (mod 360) →
+  // targetNorm = (270 - (i+0.5)*segAngle) mod 360
+  var segAngle = WHEEL_SEG_ANGLE;
   var targetNorm;
   if (targetNormOverride != null) {
     targetNorm = ((targetNormOverride % 360) + 360) % 360;
@@ -5826,16 +5831,27 @@ function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
   var endDeg = wheelRotationDeg + extraSpins + delta;
   var duration = 3600 + Math.random() * 600;
   var startTime = null;
+  wheelLastTickBucket = Math.floor(startDeg / segAngle);
 
   function animate(ts) {
     if (!startTime) startTime = ts;
     var progress = Math.min((ts - startTime) / duration, 1);
-    wheelRotationDeg = startDeg + (endDeg - startDeg) * easeOutCubicWheel(progress);
-    drawWheelCanvas(wheelRotationDeg, -1);
+    // easeOutBack gives the fast-accelerate/gradual-decelerate spin its
+    // "slight overshoot with one settle bounce" finish in a single
+    // continuous curve — it overshoots past the final angle around
+    // progress ~0.85-0.95 and settles exactly back to it by progress 1.
+    wheelRotationDeg = startDeg + (endDeg - startDeg) * easeOutBackWheel(progress);
+    var bucket = Math.floor(wheelRotationDeg / segAngle);
+    if (bucket !== wheelLastTickBucket) {
+      pulseWheelPointerTick();
+      wheelLastTickBucket = bucket;
+    }
+    renderWheelRotation(wheelRotationDeg);
     if (progress < 1) {
       requestAnimationFrame(animate);
     } else {
       wheelRotationDeg = endDeg;
+      renderWheelRotation(wheelRotationDeg);
       onWheelSpinComplete();
     }
   }
@@ -5847,18 +5863,41 @@ function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
 window.spinWheel = function () {
   if (wheelIsSpinning) return;
   if (isSyncActive()) { syncSpin(); return; }
-  startWheelSpinAnimation(Math.floor(Math.random() * 6), null, null);
+  startWheelSpinAnimation(Math.floor(Math.random() * WHEEL_SEG_COUNT), null, null);
 };
 
 function onWheelSpinComplete() {
   wheelIsSpinning = false;
-  drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+  wheelHasSpunOnce = true;
+  renderWheelLandedState(wheelLandedSegment);
+  pulseWheelPointerLanded();
   var spinBtn = document.getElementById('wheelSpinBtn');
   if (spinBtn) spinBtn.disabled = false;
+  setWheelSpinBtnState('result');
+  showWheelResultTeaser(WHEEL_SEGMENTS[wheelLandedSegment]);
   setTimeout(function () {
     showWheelResult(wheelPendingForcedCard);
     wheelPendingForcedCard = null;
   }, 700);
+}
+
+// The small "what did we land on" card shown above the wheel the instant
+// it settles — category + one-line description only. The deeper reveal
+// (the actual dare/position text) is the existing card further down,
+// shown a beat later by showWheelResult. This card's action button ships
+// in a follow-up PR; for now it's read-only.
+function showWheelResultTeaser(seg) {
+  var el = document.getElementById('wheelResultTeaser');
+  if (!el || !seg) return;
+  var glyph = document.getElementById('wheelResultTeaserGlyph');
+  var name = document.getElementById('wheelResultTeaserName');
+  var desc = document.getElementById('wheelResultTeaserDesc');
+  if (glyph) glyph.innerHTML = appIcon(seg.iconKey, "wheel-result-teaser-glyph-img", "", true);
+  if (name) name.textContent = seg.label;
+  if (desc) desc.textContent = seg.tagline;
+  el.classList.remove('hidden', 'wheel-result-teaser-play');
+  void el.offsetWidth;
+  el.classList.add('wheel-result-teaser-play');
 }
 
 function wheelCardColorClass() {
@@ -5868,10 +5907,26 @@ function wheelCardColorClass() {
   return wheelCurrentPlayer === 'john' ? 'player1-card' : 'player2-card';
 }
 
+// Draws the dare pool for a wheel segment at the given tier — Wildcard
+// has no tag (a plain untagged draw, same shape as elsewhere in the
+// app); the other six pass their tag through requireTag. pool.js itself
+// already falls back to the unlockedTags-filtered (untagged) pool if a
+// segment's tag has no dares written yet at this tier, same as every
+// other requireTag caller — nothing wheel-specific needed here. Shared
+// by the solo draw (showWheelResult) and the server-authoritative draw
+// (syncSpin) so both pick from the exact same pool shape.
+function drawWheelDarePool(tier, seg) {
+  var opts = {
+    mode: "dare", tier: tier, respectGender: false, respectPreferences: false,
+    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
+  };
+  if (seg.tag) opts.requireTag = seg.tag;
+  return window.Pool.getPlayablePool(opts);
+}
+
 function showWheelResult(forcedCard, skipTimerSchedule) {
-  var tierEl = document.getElementById('wheelTierSelect');
-  var tier = tierEl ? tierEl.value : 'tease';
-  var seg = wheelSegmentDefs[tier][wheelLandedSegment];
+  var tier = getWheelTier();
+  var seg = WHEEL_SEGMENTS[wheelLandedSegment];
 
   var cardEl     = document.getElementById('wheelCard');
   var cardLabel  = document.getElementById('wheelCardLabel');
@@ -5891,7 +5946,7 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
       var posPool = window.Pool.getPlayablePool({ mode: "position", tier: tier });
       pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
     }
-    cardLabel.innerText = '🔀 POSITION';
+    cardLabel.innerHTML = appIcon("positions", "action-btn-icon", "", true) + 'POSITION';
     cardText.innerHTML =
       '<strong style="font-size:17px;">' + pos.name + '</strong>' +
       '<span style="font-size:13px;opacity:0.82;line-height:1.65;display:block;margin-top:7px;">' + pos.description + '</span>' +
@@ -5903,14 +5958,11 @@ function showWheelResult(forcedCard, skipTimerSchedule) {
       dare = dares[forcedCard.cardIndex] || null;
     }
     if (!dare) {
-      var darePool = window.Pool.getPlayablePool({
-        mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
-        unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
-      });
+      var darePool = drawWheelDarePool(tier, seg);
       dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     }
-    cardLabel.innerText = seg.emoji + ' ' + seg.label.toUpperCase();
-    cardText.innerText = dare.text;
+    cardLabel.innerHTML = appIcon(seg.iconKey, "action-btn-icon", "", true) + seg.label.toUpperCase();
+    cardText.innerText = dare ? dare.text : "No cards available for this player 😅";
   }
 
   resultArea.style.display = 'block';
@@ -5981,6 +6033,8 @@ window.startWheelTimer = function () {
 
 window.wheelNextTurn = function () {
   if (typeof markRoundPlayed === "function") markRoundPlayed();
+  var teaser = document.getElementById('wheelResultTeaser');
+  if (teaser) teaser.classList.add('hidden');
   if (isSyncActive()) {
     resetWheelSyncUI();
     document.getElementById('wheelResultArea').style.display = 'none';
@@ -5988,7 +6042,7 @@ window.wheelNextTurn = function () {
     document.getElementById('wheelNextTurnBtn').style.display = 'none';
     if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
     wheelTimerRunning = false;
-    drawWheelCanvas(wheelRotationDeg, -1);
+    renderWheelLandedState(-1);
     if (typeof refreshEngineSnapshot === "function") refreshEngineSnapshot();
     return;
   }
@@ -5999,7 +6053,7 @@ window.wheelNextTurn = function () {
   document.getElementById('wheelNextTurnBtn').style.display = 'none';
   if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
   wheelTimerRunning = false;
-  drawWheelCanvas(wheelRotationDeg, -1);
+  renderWheelLandedState(-1);
 };
 
 // ========================= //
@@ -6009,13 +6063,15 @@ window.wheelNextTurn = function () {
 // 'points_awarded' event so both modes feed one running score. The
 // outcome (segment + exact landing angle + which card/position) is
 // decided once by whoever spins and broadcast — the partner's wheel
-// replays that same outcome rather than rolling its own.
+// replays that same outcome rather than rolling its own. The segment
+// index always refers to WHEEL_SEGMENTS, so both devices land on the
+// identical category regardless of which one's dial happened to move
+// the effective heat most recently.
 
 function syncSpin() {
-  var tierEl = document.getElementById('wheelTierSelect');
-  var tier = getEffectiveDrawTier(tierEl ? tierEl.value : 'tease');
-  var segmentIndex = Math.floor(Math.random() * 6);
-  var seg = wheelSegmentDefs[tier][segmentIndex];
+  var tier = getEffectiveDrawTier(getEffectiveHeatTier());
+  var segmentIndex = Math.floor(Math.random() * WHEEL_SEG_COUNT);
+  var seg = WHEEL_SEGMENTS[segmentIndex];
   var roundId = genRoundId();
   var performerId = gameSyncMyId();
 
@@ -6025,10 +6081,7 @@ function syncSpin() {
     var pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
     forcedCard.positionId = pos.id;
   } else {
-    var darePool = window.Pool.getPlayablePool({
-      mode: "dare", tier: tier, respectGender: false, respectPreferences: false, requireTag: seg.tag,
-      unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
-    });
+    var darePool = drawWheelDarePool(tier, seg);
     var dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
     forcedCard.cardIndex = darePool.fullList.indexOf(dare);
   }
@@ -6057,9 +6110,6 @@ function applyRemoteWheelSpun(ev) {
   var myId = gameSyncMyId();
   var myRole = p.performer_user_id === myId ? 'performer' : 'judge';
 
-  var tierEl = document.getElementById('wheelTierSelect');
-  if (tierEl) tierEl.value = p.tier;
-
   syncWheelRound = {
     roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
     cardKind: p.cardKind, cardIndex: p.cardIndex, positionId: p.positionId,
@@ -6068,7 +6118,7 @@ function applyRemoteWheelSpun(ev) {
 
   var label = document.getElementById('wheelSpunByLabel');
   if (label) {
-    label.innerText = '🎡 Spun by ' + (gameSyncPartnerName || 'your partner');
+    label.innerHTML = appIcon("spinTheWheel", "action-btn-icon", "", true) + 'Spun by ' + escapeHtml(gameSyncPartnerName || 'your partner');
     label.classList.remove('hidden');
   }
 
@@ -6084,11 +6134,13 @@ function restoreWheelRound(starterEvent) {
   var myId = gameSyncMyId();
   var myRole = p.performer_user_id === myId ? "performer" : "judge";
 
-  var tierEl = document.getElementById("wheelTierSelect");
-  if (tierEl) tierEl.value = p.tier;
   wheelLandedSegment = p.segmentIndex;
+  wheelHasSpunOnce = true;
   if (p.targetRotationDeg != null) wheelRotationDeg = p.targetRotationDeg;
-  drawWheelCanvas(wheelRotationDeg, wheelLandedSegment);
+  buildWheelSvg();
+  renderWheelRotation(wheelRotationDeg);
+  renderWheelLandedState(wheelLandedSegment);
+  setWheelSpinBtnState('result');
 
   syncWheelRound = {
     roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
@@ -6099,7 +6151,7 @@ function restoreWheelRound(starterEvent) {
   var label = document.getElementById("wheelSpunByLabel");
   if (label) {
     if (myRole === "judge") {
-      label.innerText = "🎡 Spun by " + (gameSyncPartnerName || "your partner");
+      label.innerHTML = appIcon("spinTheWheel", "action-btn-icon", "", true) + "Spun by " + escapeHtml(gameSyncPartnerName || "your partner");
       label.classList.remove("hidden");
     } else {
       label.classList.add("hidden");
