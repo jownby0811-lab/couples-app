@@ -889,25 +889,81 @@
   <p id="wheelConnIndicator" class="conn-indicator hidden"></p>
 
   <div class="heat-tier-row">
-    <span id="wheelTierSelectIcon" class="tier-select-icon"></span>
-    <select id="wheelTierSelect" onchange="wheelTierChanged(); refreshTierSelectIcons();">
-      <option value="tease">Tease 😏</option>
-      <option value="foreplay">Foreplay 🔥</option>
-      <option value="dirty">Dirty 😈</option>
-    </select>
-    <span id="heatAmbianceWheel" class="heat-ambiance hidden"></span>
+    <div class="tier-dropdown" id="wheelTierDropdown">
+      <button type="button" id="wheelTierTrigger" class="tier-dropdown-trigger"
+              aria-haspopup="listbox" aria-expanded="false"
+              onclick="toggleWheelTierDropdown()" onkeydown="handleWheelTierTriggerKeydown(event)">
+        <span id="wheelTierTriggerContent" class="tier-dropdown-trigger-content"></span>
+        <span class="tier-dropdown-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <ul id="wheelTierListbox" class="tier-dropdown-panel hidden" role="listbox" aria-label="Heat tier" onkeydown="handleWheelTierListboxKeydown(event)">
+        <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="tease" id="wheelTierOpt-tease" onclick="selectWheelTier('tease')">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/tease-feather@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😏')">
+          <span>Tease</span>
+        </li>
+        <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="foreplay" id="wheelTierOpt-foreplay" onclick="selectWheelTier('foreplay')">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/foreplay-flames@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🔥')">
+          <span>Foreplay</span>
+        </li>
+        <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="dirty" id="wheelTierOpt-dirty" onclick="selectWheelTier('dirty')">
+          <img class="tier-select-icon-img" src="assets/icons/gameplay/dirty-heart@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😈')">
+          <span>Dirty</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="adaptive-heat-display hidden" id="adaptiveHeatDisplayWheel">
+      <button type="button" id="adaptiveHeatTriggerWheel" class="tier-dropdown-trigger"
+              aria-haspopup="true" aria-expanded="false" onclick="toggleAdaptiveHeatPanelWheel()">
+        <span id="adaptiveHeatTriggerContentWheel" class="tier-dropdown-trigger-content"></span>
+        <span class="tier-dropdown-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div id="adaptiveHeatPanelWheel" class="adaptive-heat-panel hidden">
+        <div class="adaptive-heat-arc">
+          <div class="adaptive-heat-arc-step" data-tier="tease">
+            <img class="tier-select-icon-img" src="assets/icons/gameplay/tease-feather@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😏')">
+            <span>Tease</span>
+          </div>
+          <div class="adaptive-heat-arc-step" data-tier="foreplay">
+            <img class="tier-select-icon-img" src="assets/icons/gameplay/foreplay-flames@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🔥')">
+            <span>Foreplay</span>
+          </div>
+          <div class="adaptive-heat-arc-step" data-tier="dirty">
+            <img class="tier-select-icon-img" src="assets/icons/gameplay/dirty-heart@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😈')">
+            <span>Dirty</span>
+          </div>
+        </div>
+        <p class="adaptive-heat-caption">the night decides when you're ready</p>
+        <div class="adaptive-heat-actions">
+          <button type="button" id="turnUpHeatBtnWheel" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
+          <button type="button" id="coolItDownBtnWheel" class="cool-it-down-btn hidden" onclick="coolItDown()">Cool it down</button>
+        </div>
+      </div>
+    </div>
   </div>
-  <button type="button" id="turnUpHeatBtnWheel" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
+
+  <p class="tier-readout hidden" id="wheelTierReadout"></p>
 
   <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
   <p id="wheelScoreDisplay" class="wheel-score-display hidden"></p>
 
-  <div class="wheel-wrapper">
-    <div class="wheel-pointer-arrow">▼</div>
-    <canvas id="wheelCanvas" width="380" height="380"></canvas>
+  <div id="wheelResultTeaser" class="wheel-result-teaser hidden">
+    <span class="wheel-result-teaser-glyph" id="wheelResultTeaserGlyph"></span>
+    <span class="wheel-result-teaser-text">
+      <span class="wheel-result-teaser-name" id="wheelResultTeaserName"></span>
+      <span class="wheel-result-teaser-desc" id="wheelResultTeaserDesc"></span>
+    </span>
   </div>
 
-  <button id="wheelSpinBtn" onclick="spinWheel()">SPIN 🎰</button>
+  <div class="wheel-wrapper">
+    <div class="wheel-pointer" aria-hidden="true"></div>
+    <svg id="wheelSvg" class="wheel-svg" viewBox="0 0 380 380" role="img" aria-label="Spin the Wheel"></svg>
+  </div>
+
+  <button id="wheelSpinBtn" onclick="spinWheel()">
+    <img class="action-btn-icon" src="assets/icons/ui/spin-the-wheel@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🎡')">
+    <span id="wheelSpinBtnLabel">Spin</span>
+  </button>
 
   <div id="wheelResultArea" style="display:none;">
     <p id="wheelSpunByLabel" class="drawn-by-label hidden"></p>
