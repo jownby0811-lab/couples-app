@@ -98,8 +98,16 @@ body::before {
   transform: translateX(0);
 }
 
+/* Icon-left, label-right — identical across all 9 rows. The icon column
+   is a fixed width so every label starts at the same left edge whether
+   or not its row's icon is exactly square, and align-items:flex-start
+   keeps the icon pinned to the first text line instead of centering
+   against labels that wrap to two lines (e.g. "Spin the Wheel"). */
 .menu a {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
   padding: 12px 18px;
   color: #fff5f7;
   text-decoration: none;
@@ -107,11 +115,24 @@ body::before {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 1.3rem;
   line-height: 1.25;
+  box-sizing: border-box;
 }
 
 .menu a:hover {
   background: #2a1722;
   color: #c9a97a;
+}
+
+.menu-link-icon-col {
+  flex: 0 0 24px;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+  padding-top: 3px;
+}
+
+.menu-link-label {
+  flex: 1 1 auto;
 }
 
 /* Menu discovery cue — first-run only, cleared permanently once the
@@ -3346,11 +3367,19 @@ hr {
   margin-right: 6px;
 }
 
+/* Sized by .menu-link-icon-col, not its own margin — the side menu's
+   flex row (see .menu a) owns the icon/label gap. */
 .nav-link-icon {
   width: 20px;
   height: 20px;
+  display: block;
+}
+
+.propose-btn-icon {
+  width: 18px;
+  height: 18px;
   vertical-align: middle;
-  margin-right: 8px;
+  margin-left: 4px;
 }
 
 /* ========================= */
