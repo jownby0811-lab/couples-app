@@ -3069,6 +3069,233 @@ hr {
   box-shadow: none;
 }
 
+/* ---- Adaptive heat display (Truth or Dare, adaptive heat mode) ---- */
+/* Read-only status display + expand panel — see refreshAdaptiveHeatDisplay
+   in script.js. Reuses .tier-dropdown-trigger/.tier-dropdown-chevron for
+   the closed state so it matches the manual dropdown's pill exactly;
+   only the open panel's contents differ. */
+
+.adaptive-heat-display {
+  position: relative;
+  display: inline-flex;
+}
+
+.adaptive-heat-display.hidden {
+  display: none;
+}
+
+.adaptive-heat-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* Anchored to the trigger's right edge, extending left, rather than
+     centered under it — see .tier-dropdown-panel for why. */
+  right: 0;
+  left: auto;
+  width: max-content;
+  min-width: 240px;
+  max-width: calc(100vw - 24px);
+  background: #171015;
+  border: 1.5px solid rgba(201, 169, 122, 0.4);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 16px 14px;
+  z-index: 8;
+}
+
+.adaptive-heat-panel.hidden {
+  display: none;
+}
+
+.adaptive-heat-arc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.adaptive-heat-arc-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 245, 247, 0.5);
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.adaptive-heat-arc-step img {
+  margin-right: 0;
+}
+
+.adaptive-heat-arc-step-current {
+  opacity: 1;
+  color: #c9a97a;
+  font-weight: 600;
+}
+
+.adaptive-heat-arc-step-locked {
+  opacity: 0.25;
+}
+
+/* "the night decides when you're ready" — deliberately the only copy in
+   this panel, no rank/progress/count framing, matching the app's
+   existing ambiance-only philosophy for heat. */
+.adaptive-heat-caption {
+  text-align: center;
+  font-size: 12.5px;
+  font-style: italic;
+  color: rgba(201, 169, 122, 0.75);
+  margin: 12px 0 0;
+}
+
+.adaptive-heat-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.adaptive-heat-actions .turn-up-heat-btn {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
+.cool-it-down-btn {
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin: 0;
+  border: 1px solid rgba(200, 205, 214, 0.3);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-family: 'Poppins', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c8cdd6;
+  background: rgba(200, 205, 214, 0.08);
+  cursor: pointer;
+  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s;
+}
+
+.cool-it-down-btn.hidden {
+  display: none;
+}
+
+.cool-it-down-btn:active {
+  transform: translateY(-1px) scale(1.02);
+}
+
+/* ---- Tier readout: "You: X · Partner: Y · Playing at: Z" ---- */
+/* Synced only — makes a raised dial that changes nothing (partner
+   hasn't caught up) read as by-design rather than broken. */
+
+.tier-readout {
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 245, 247, 0.65);
+  margin: 4px 0 8px;
+}
+
+.tier-readout.hidden {
+  display: none;
+}
+
+.tier-readout-sep {
+  margin: 0 6px;
+  color: rgba(255, 245, 247, 0.3);
+}
+
+.tier-readout-effective {
+  color: #c9a97a;
+  font-weight: 600;
+}
+
+/* ---- Heat mode choice (signup/onboarding) ---- */
+
+.heat-mode-choice {
+  margin: 16px 0 4px;
+  text-align: left;
+}
+
+.heat-mode-choice-label {
+  font-size: 14px;
+  color: #c9a97a;
+  margin-bottom: 8px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.heat-mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.heat-mode-card {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  text-align: left;
+  padding: 12px 14px;
+  margin: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  color: #fff5f7;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.heat-mode-card:hover {
+  transform: none;
+  border-color: rgba(201, 169, 122, 0.4);
+}
+
+.heat-mode-card-selected {
+  background: rgba(201, 169, 122, 0.12);
+  border-color: #c9a97a;
+}
+
+.heat-mode-card-title {
+  font-family: 'Playfair Display', serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: #fff5f7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.heat-mode-card-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #12070d;
+  background: linear-gradient(90deg, #c9a97a 0%, #c8cdd6 100%);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.heat-mode-card-desc {
+  font-size: 14px;
+  color: rgba(255, 245, 247, 0.6);
+  margin-top: 3px;
+}
+
+.heat-mode-choice-note {
+  font-size: 12px;
+  color: rgba(255, 245, 247, 0.45);
+  text-align: center;
+  margin: 10px 0 0;
+}
+
 /* ========================= */
 /* GAMEPLAY ICONS            */
 /* ========================= */
@@ -3142,6 +3369,10 @@ hr {
   display: inline-flex;
 }
 
+.tier-dropdown.hidden {
+  display: none;
+}
+
 .tier-dropdown-trigger {
   display: inline-flex;
   align-items: center;
@@ -3181,8 +3412,13 @@ hr {
 .tier-dropdown-panel {
   position: absolute;
   top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  /* Anchored to the trigger's right edge, extending left, rather than
+     centered under it — centering can push the panel past the viewport
+     edge when the trigger itself isn't near screen-center (e.g. sharing
+     a row with the sync status pill). max-width is still the backstop
+     against the panel simply being too wide for the viewport. */
+  right: 0;
+  left: auto;
   width: max-content;
   min-width: 170px;
   max-width: calc(100vw - 24px);

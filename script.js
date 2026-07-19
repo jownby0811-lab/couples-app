@@ -17,6 +17,8 @@ window.showPage = function (pageId) {
     if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
     if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
     if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+    if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
+    if (typeof refreshTierReadout === "function") refreshTierReadout();
   }
   if (pageId === "wheel" && typeof resizeWheelCanvas === "function") {
     resizeWheelCanvas();
@@ -832,56 +834,102 @@ function showStatus(message) {
   setTimeout(() => { status.style.opacity = "0"; }, 2000);
 }
 
-// ---- Truth or Dare tier dropdown (custom listbox) ----
-// Replaces the page's native <select> — every draw/sync/pool call site
-// already goes through getSelectedTier(), so backing it with this
-// variable instead of a DOM element's .value is a drop-in swap.
-var selectedTruthTier = "tease";
+// ---- Truth or Dare tier control: per-user "dial" + effective heat ----
+// Each player has their own current tier ("dial"). The session's
+// effective (played) heat is min(my dial, partner's dial) when synced —
+// see getEffectiveHeatTier() — or just my own dial when solo/unlinked,
+// where there's no second dial to min against (byte-identical to this
+// app's pre-existing solo behavior, which never restricted tier at all).
+// Manual mode edits your dial directly via this dropdown (selectTruthTier
+// below); adaptive mode's heat display only shows it (see ADAPTIVE HEAT
+// DISPLAY further down) and moves it via the heat-up/cool-down actions.
+var myTierDial = "tease";
+var partnerTierDial = "tease";
 var truthTierDropdownOpen = false;
 
-function getSelectedTier() {
-  return selectedTruthTier;
-}
+// Per-user heat mode ('manual' | 'adaptive') — see Backend.setHeatMode /
+// profiles.heat_mode. Seeded from localStorage (set by the onboarding
+// heat-mode step or the Account toggle) for the logged-out/local case;
+// overwritten from the server in handleGameBackendChange once logged in.
+// Defaults to 'manual' for a returning pre-feature user who never saw
+// the onboarding step, matching pre-feature behavior (see Part A).
+var myHeatMode = localStorage.getItem("heatMode") || "manual";
+var partnerHeatMode = "manual";
 
 function truthTierLabel(tier) {
   return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
+// The tier every draw, for either performer, actually comes from — see
+// getHeatCeilingForPool() and every draw call site.
+function getEffectiveHeatTier() {
+  if (!isSyncActive()) return myTierDial;
+  var myIdx = TIER_ORDER.indexOf(myTierDial);
+  var partnerIdx = TIER_ORDER.indexOf(partnerTierDial);
+  if (myIdx === -1) myIdx = 0;
+  if (partnerIdx === -1) partnerIdx = 0;
+  return TIER_ORDER[Math.min(myIdx, partnerIdx)];
+}
+
 function updateTruthTierTrigger() {
   var content = document.getElementById("truthTierTriggerContent");
   if (!content) return;
-  content.innerHTML = gameplayIcon(selectedTruthTier, "tier-select-icon-img", "", true) + truthTierLabel(selectedTruthTier);
+  content.innerHTML = gameplayIcon(myTierDial, "tier-select-icon-img", "", true) + truthTierLabel(myTierDial);
 }
 
-function setSelectedTruthTier(tier) {
-  selectedTruthTier = tier;
-  updateTruthTierTrigger();
+// Local-only UI refresh — does not itself move the dial or send an
+// event (see setMyTierDial for the one path that does).
+function refreshTruthTierDropdownSelection() {
   TIER_ORDER.forEach(function (t) {
     var opt = document.getElementById("truthTierOpt-" + t);
     if (!opt) return;
-    opt.setAttribute("aria-selected", String(t === tier));
-    opt.classList.toggle("tier-dropdown-option-selected", t === tier);
+    opt.setAttribute("aria-selected", String(t === myTierDial));
+    opt.classList.toggle("tier-dropdown-option-selected", t === myTierDial);
   });
+  updateTruthTierTrigger();
 }
 
-// Mirrors the disabled-option behavior the native <select> enforced —
-// called from updateTierSelectOptions() whenever the session's heat
-// ceiling changes.
-function updateTruthTierDropdownLocks(ceilingIdx) {
-  TIER_ORDER.forEach(function (t, idx) {
-    var opt = document.getElementById("truthTierOpt-" + t);
-    if (!opt) return;
-    var locked = idx > ceilingIdx;
-    opt.setAttribute("aria-disabled", String(locked));
-    opt.classList.toggle("tier-dropdown-option-locked", locked);
-  });
-}
-
+// Manual mode only: freely set your own dial to any tier, any direction,
+// anytime — no gating, no partner consent needed. Raising unilaterally is
+// inert until your partner's dial also reaches that tier (see the "min"
+// rule in getEffectiveHeatTier); lowering is immediate and unilateral.
 function selectTruthTier(tier) {
-  var opt = document.getElementById("truthTierOpt-" + tier);
-  if (opt && opt.getAttribute("aria-disabled") === "true") return; // locked, non-selectable
-  setSelectedTruthTier(tier);
+  if (TIER_ORDER.indexOf(tier) === -1 || tier === myTierDial) { closeTruthTierDropdown(); return; }
+  setMyTierDial(tier, "manual_pick");
   closeTruthTierDropdown();
+}
+
+// The one place that actually moves MY dial — used by the manual
+// dropdown above and by the adaptive "Cool it down" action. Persisted as
+// a direct game_event (not the propose/respond RPC — nothing to agree
+// on for your own dial) so it survives reconnect and reaches the
+// partner's device. Plays the heat-rise ceremony only when this actually
+// raises the EFFECTIVE (played) heat — not on every personal dial nudge,
+// so a raise that changes nothing (partner hasn't caught up) stays quiet.
+// Applies myTierDial locally (dropdown/display UI + ceremony-if-warranted)
+// without sending a new event — used by respondToProgressionPrompt below,
+// where the server has already persisted the change via respond_progression
+// (and the realtime echo of that insert is filtered out as "my own event"
+// by handleGameEvent, so nothing else will apply it locally). setMyTierDial
+// is the direct/manual-pick path, which does need to send its own event.
+function applyMyTierDialLocally(tier) {
+  var before = getEffectiveHeatTier();
+  myTierDial = tier;
+  refreshTruthTierDropdownSelection();
+  if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+  if (typeof refreshTierReadout === "function") refreshTierReadout();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+  var after = getEffectiveHeatTier();
+  if (TIER_ORDER.indexOf(after) > TIER_ORDER.indexOf(before) && typeof playHeatRiseCeremony === "function") {
+    playHeatRiseCeremony(after);
+  }
+}
+
+function setMyTierDial(tier, via) {
+  applyMyTierDialLocally(tier);
+  if (isSyncActive() && window.GameSync) {
+    window.GameSync.send("heat_changed", { tier: tier, via: via || "manual_pick" });
+  }
 }
 
 function openTruthTierDropdown() {
@@ -891,11 +939,8 @@ function openTruthTierDropdown() {
   truthTierDropdownOpen = true;
   panel.classList.remove("hidden");
   trigger.setAttribute("aria-expanded", "true");
-  var current = document.getElementById("truthTierOpt-" + selectedTruthTier);
-  var target = (current && current.getAttribute("aria-disabled") !== "true")
-    ? current
-    : panel.querySelector('[role="option"]:not([aria-disabled="true"])');
-  if (target) target.focus();
+  var current = document.getElementById("truthTierOpt-" + myTierDial);
+  if (current) current.focus();
 }
 
 // returnFocus defaults to true (Escape, selection); an outside tap
@@ -916,6 +961,18 @@ function toggleTruthTierDropdown() {
   else openTruthTierDropdown();
 }
 
+// Adaptive mode's one direct dial action (see the expand panel in
+// ADAPTIVE HEAT DISPLAY) — immediately lowers MY OWN dial by one tier.
+// No consent needed: lowering is always unilateral and immediate (unlike
+// raising, which goes through the mutual heat-up proposal). A no-op at
+// the coolest tier already.
+window.coolItDown = function () {
+  var idx = TIER_ORDER.indexOf(myTierDial);
+  if (idx <= 0) return;
+  setMyTierDial(TIER_ORDER[idx - 1], "cool_down");
+  showStatus("Cooling to " + truthTierLabel(TIER_ORDER[idx - 1]));
+};
+
 function handleTruthTierTriggerKeydown(e) {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
@@ -925,22 +982,21 @@ function handleTruthTierTriggerKeydown(e) {
 
 function handleTruthTierListboxKeydown(e) {
   var options = TIER_ORDER.map(function (t) { return document.getElementById("truthTierOpt-" + t); }).filter(Boolean);
-  var enabled = options.filter(function (o) { return o.getAttribute("aria-disabled") !== "true"; });
-  var idx = enabled.indexOf(document.activeElement);
+  var idx = options.indexOf(document.activeElement);
   if (e.key === "ArrowDown") {
     e.preventDefault();
-    var next = enabled[idx === -1 ? 0 : Math.min(idx + 1, enabled.length - 1)];
+    var next = options[idx === -1 ? 0 : Math.min(idx + 1, options.length - 1)];
     if (next) next.focus();
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
-    var prev = enabled[idx === -1 ? 0 : Math.max(idx - 1, 0)];
+    var prev = options[idx === -1 ? 0 : Math.max(idx - 1, 0)];
     if (prev) prev.focus();
   } else if (e.key === "Home") {
     e.preventDefault();
-    if (enabled[0]) enabled[0].focus();
+    if (options[0]) options[0].focus();
   } else if (e.key === "End") {
     e.preventDefault();
-    if (enabled[enabled.length - 1]) enabled[enabled.length - 1].focus();
+    if (options[options.length - 1]) options[options.length - 1].focus();
   } else if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     var focused = document.activeElement;
@@ -951,6 +1007,108 @@ function handleTruthTierListboxKeydown(e) {
   } else if (e.key === "Tab") {
     closeTruthTierDropdown(false);
   }
+}
+
+// ---- ADAPTIVE HEAT DISPLAY ----
+// Adaptive mode's tier control: a read-only status display (never a
+// picker — see refreshTruthTierModeUI, which shows this instead of
+// #truthTierDropdown when myHeatMode is 'adaptive') that expands to a
+// small panel showing the tease/foreplay/dirty arc, the "Turn up the
+// heat?" escalation action, and the "Cool it down" de-escalation action.
+var adaptiveHeatPanelOpen = false;
+
+function refreshTruthTierModeUI() {
+  var dropdown = document.getElementById("truthTierDropdown");
+  var display = document.getElementById("adaptiveHeatDisplay");
+  if (!dropdown || !display) return;
+  // Adaptive mode has no experience to offer without a partner — the
+  // engine, heat-up proposals, and ceremony are all synced-only — so
+  // solo/unlinked users always get the free-pick dropdown regardless of
+  // their chosen heat mode, matching this app's existing principle that
+  // solo play stays exactly as free as it was before this feature.
+  var adaptive = myHeatMode === "adaptive" && isSyncActive();
+  dropdown.classList.toggle("hidden", adaptive);
+  display.classList.toggle("hidden", !adaptive);
+  if (adaptive) refreshAdaptiveHeatDisplay();
+}
+
+// Updates the trigger's icon+label, the arc's dimmed/current steps, and
+// the two action buttons — called whenever myTierDial, the effective
+// heat, or the open-proposal state changes.
+function refreshAdaptiveHeatDisplay() {
+  var content = document.getElementById("adaptiveHeatTriggerContent");
+  if (content) content.innerHTML = gameplayIcon(myTierDial, "tier-select-icon-img", "", true) + truthTierLabel(myTierDial);
+
+  var myIdx = TIER_ORDER.indexOf(myTierDial);
+  TIER_ORDER.forEach(function (t, idx) {
+    var step = document.querySelector('.adaptive-heat-arc-step[data-tier="' + t + '"]');
+    if (!step) return;
+    step.classList.toggle("adaptive-heat-arc-step-locked", idx > myIdx);
+    step.classList.toggle("adaptive-heat-arc-step-current", idx === myIdx);
+  });
+
+  var upBtn = document.getElementById("turnUpHeatBtnTruth");
+  if (upBtn) {
+    var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
+    var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
+    var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
+    if (!isSyncActive() || myHeatMode !== "adaptive" || atMax) {
+      upBtn.classList.add("hidden");
+    } else {
+      upBtn.classList.remove("hidden");
+      upBtn.disabled = hasOpenHeatProposal;
+      upBtn.innerHTML = hasOpenHeatProposal
+        ? "Asked 💌"
+        : gameplayIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
+    }
+  }
+
+  var coolBtn = document.getElementById("coolItDownBtnTruth");
+  if (coolBtn) {
+    coolBtn.classList.toggle("hidden", !isSyncActive() || myHeatMode !== "adaptive" || myIdx <= 0);
+  }
+}
+
+function openAdaptiveHeatPanel() {
+  var panel = document.getElementById("adaptiveHeatPanel");
+  var trigger = document.getElementById("adaptiveHeatTrigger");
+  if (!panel || !trigger || adaptiveHeatPanelOpen) return;
+  adaptiveHeatPanelOpen = true;
+  panel.classList.remove("hidden");
+  trigger.setAttribute("aria-expanded", "true");
+}
+
+function closeAdaptiveHeatPanel(returnFocus) {
+  var panel = document.getElementById("adaptiveHeatPanel");
+  var trigger = document.getElementById("adaptiveHeatTrigger");
+  if (!panel || !trigger || !adaptiveHeatPanelOpen) return;
+  adaptiveHeatPanelOpen = false;
+  panel.classList.add("hidden");
+  trigger.setAttribute("aria-expanded", "false");
+  if (returnFocus !== false) trigger.focus();
+}
+
+function toggleAdaptiveHeatPanel() {
+  if (adaptiveHeatPanelOpen) closeAdaptiveHeatPanel();
+  else openAdaptiveHeatPanel();
+}
+
+// The "You: X · Partner: Y · Playing at: Z" readout shown under both
+// tier controls — synced only, so a raised dial that changes nothing
+// (partner hasn't caught up) reads as by-design rather than broken.
+function refreshTierReadout() {
+  var el = document.getElementById("truthTierReadout");
+  if (!el) return;
+  if (!isSyncActive()) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  var myName = gameSyncMyName || "You";
+  var partnerName = gameSyncPartnerName || "Partner";
+  el.innerHTML =
+    "<span>" + escapeHtml(myName) + ": " + truthTierLabel(myTierDial) + "</span>" +
+    '<span class="tier-readout-sep">&middot;</span>' +
+    "<span>" + escapeHtml(partnerName) + ": " + truthTierLabel(partnerTierDial) + "</span>" +
+    '<span class="tier-readout-sep">&middot;</span>' +
+    '<span class="tier-readout-effective">Playing at: ' + truthTierLabel(getEffectiveHeatTier()) + "</span>";
 }
 
 window.toggleMenu = function () {
@@ -1745,7 +1903,7 @@ function getTruth() {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("truth"); return; }
-  let tier = getSelectedTier();
+  let tier = getEffectiveHeatTier();
   let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly, heatCeiling: getHeatCeilingForPool() });
   let fullList = pool.fullList;
   let list = pool.items;
@@ -1773,7 +1931,7 @@ function getDare() {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
-  let tier = getSelectedTier();
+  let tier = getEffectiveHeatTier();
   let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   let fullList = pool.fullList;
   let list = pool.items;
@@ -2067,7 +2225,7 @@ function endSyncTruthRound() {
 function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
-  var tier = getEffectiveDrawTier(getSelectedTier());
+  var tier = getEffectiveDrawTier(getEffectiveHeatTier());
   var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
   var fullList = pool.fullList;
   var list = pool.items;
@@ -2337,26 +2495,22 @@ var activeProgressionPromptId = null;
 var activeProgressionPromptTag = null;
 var activeProgressionPromptKind = null; // 'tag' | 'heat'
 
-// Session heat ceiling — synced couples only. "tease" mirrors
-// TIER_ORDER[0]; kept as a literal here since TIER_ORDER is declared
-// later in the file (this line runs at top-level script execution,
-// before that declaration would exist — unlike the function bodies
-// below, which only read TIER_ORDER lazily when called).
-var sessionHeatCeiling = "tease";
-
 // The heatCeiling passed to window.Pool.getPlayablePool — null (no
 // restriction) for solo/unlinked users, so their pool is byte-identical
-// to before this feature existed.
+// to before this feature existed. See getEffectiveHeatTier() (with the
+// tier dropdown code above) for the min(my dial, partner's dial) rule
+// every draw, for either performer, actually comes from.
 function getHeatCeilingForPool() {
   if (!isSyncActive()) return null;
-  return sessionHeatCeiling;
+  return getEffectiveHeatTier();
 }
 
-// The tier dropdowns become "pick within what's unlocked" for synced
-// couples; solo/unlinked users keep every option enabled, exactly as
-// today. Also clamps the current selection down if it's now above the
-// ceiling (e.g. right after reconnecting into a fresh, lower-heat
-// session).
+// Spin the Wheel keeps its own native <select>, independent of Truth or
+// Dare's per-mode tier control (out of scope for the manual/adaptive
+// rebuild) — still just "pick within what's unlocked," clamped against
+// the same effective heat. Truth or Dare's own dial is never clamped —
+// manual mode is explicitly ungated ("any tier, anytime"), and adaptive
+// mode's dial only ever moves via the heat-up/cool-down actions.
 function updateTierSelectOptions() {
   var ceiling = getHeatCeilingForPool();
   var ceilingIdx = ceiling ? TIER_ORDER.indexOf(ceiling) : TIER_ORDER.length - 1;
@@ -2369,13 +2523,6 @@ function updateTierSelectOptions() {
     if (TIER_ORDER.indexOf(wheelSel.value) > ceilingIdx) {
       wheelSel.value = TIER_ORDER[ceilingIdx];
     }
-  }
-
-  // Truth or Dare's custom listbox (see selectTruthTier etc.) — same
-  // lock + clamp rule the native <select> enforced.
-  updateTruthTierDropdownLocks(ceilingIdx);
-  if (TIER_ORDER.indexOf(selectedTruthTier) > ceilingIdx) {
-    setSelectedTruthTier(TIER_ORDER[ceilingIdx]);
   }
 
   refreshTierSelectIcons();
@@ -2399,43 +2546,48 @@ function refreshTierSelectIcons() {
   });
 }
 
-// "Turn up the heat?" is hidden entirely for solo/unlinked users and
-// once the session is already at max heat — there's nothing left to
-// propose. While an open heat proposal exists, it reads as answered-
-// already-asked (identical regardless of who proposed it), same as a
-// locked tag's "asked 💌" badge.
-function updateTurnUpHeatButtons() {
-  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+// "Turn up the heat?" on Spin the Wheel — shown regardless of heat mode
+// (Wheel's tier control wasn't part of the manual/adaptive rebuild, so
+// it keeps its pre-existing behavior). Truth or Dare's own turn-up-heat
+// action lives inside the adaptive heat display's expand panel instead
+// (see ADAPTIVE HEAT DISPLAY) and only ever shows for adaptive-mode
+// users — see refreshAdaptiveHeatDisplay. Hidden entirely for
+// solo/unlinked users and once already at max effective heat. While an
+// open heat proposal exists, it reads as answered-already-asked
+// (identical regardless of who proposed it), same as a locked tag's
+// "asked 💌" badge.
+function updateWheelTurnUpHeatButton() {
+  var btn = document.getElementById("turnUpHeatBtnWheel");
+  if (!btn) return;
+  var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
   var atMax = ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1;
   var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
-  [document.getElementById("turnUpHeatBtnTruth"), document.getElementById("turnUpHeatBtnWheel")].forEach(function (btn) {
-    if (!btn) return;
-    if (!isSyncActive() || atMax) {
-      btn.classList.add("hidden");
-      return;
-    }
-    btn.classList.remove("hidden");
-    btn.disabled = hasOpenHeatProposal;
-    btn.innerHTML = hasOpenHeatProposal
-      ? "Asked 💌"
-      : gameplayIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
-  });
+  if (!isSyncActive() || atMax) {
+    btn.classList.add("hidden");
+    return;
+  }
+  btn.classList.remove("hidden");
+  btn.disabled = hasOpenHeatProposal;
+  btn.innerHTML = hasOpenHeatProposal
+    ? "Asked 💌"
+    : gameplayIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
 }
 
-// Ambiance only — the current tier shown as a warm little cue next to
-// the selector, never a rank, count, or progress-toward-hotter framing.
+// Ambiance only — the current effective tier shown as a warm little cue
+// on Spin the Wheel, never a rank/count/progress framing. Truth or
+// Dare's own tier state is shown by its dropdown (manual) or heat
+// display (adaptive) directly instead — see refreshAdaptiveHeatDisplay.
 var TIER_AMBIANCE_LABEL = { tease: "Tease", foreplay: "Foreplay", dirty: "Dirty" };
 
 function updateHeatAmbianceUI() {
-  updateTurnUpHeatButtons();
-  var synced = isSyncActive();
-  [document.getElementById("heatAmbianceTruth"), document.getElementById("heatAmbianceWheel")].forEach(function (el) {
-    if (!el) return;
-    if (!synced) { el.classList.add("hidden"); return; }
-    el.innerHTML = "🕯 " + gameplayIcon(sessionHeatCeiling, "ambiance-icon", "", true) +
-      (TIER_AMBIANCE_LABEL[sessionHeatCeiling] || sessionHeatCeiling);
-    el.classList.remove("hidden");
-  });
+  updateWheelTurnUpHeatButton();
+  if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+  var el = document.getElementById("heatAmbianceWheel");
+  if (!el) return;
+  if (!isSyncActive()) { el.classList.add("hidden"); return; }
+  var tier = getEffectiveHeatTier();
+  el.innerHTML = "🕯 " + gameplayIcon(tier, "ambiance-icon", "", true) + (TIER_AMBIANCE_LABEL[tier] || tier);
+  el.classList.remove("hidden");
 }
 
 function getAllDareTags() {
@@ -2481,11 +2633,13 @@ function proposeTag(tag) {
     });
 }
 
-// Either player can propose turning the session heat up one tier —
-// idempotent server-side, same as proposeTag.
+// Either player can propose turning the session's effective heat up one
+// tier — idempotent server-side, same as proposeTag. Accepting raises
+// only the accepting partner's own dial (see respond_progression); the
+// couple's effective heat rises once both dials reach the target tier.
 window.proposeHeatUp = function () {
   if (!window.Backend || !isSyncActive()) return;
-  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
   if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return; // already at max
   var nextTier = TIER_ORDER[ceilingIdx + 1];
   window.Backend.createProgressionProposal("heat", nextTier)
@@ -2574,9 +2728,15 @@ window.respondToProgressionPrompt = function (answer) {
   if (personalizeEl) personalizeEl.classList.add("hidden");
   if (kind === "heat" && answer === false) heatProposalDeclinedThisSession = true;
   window.Backend.respondProgression(id, answer).then(function (result) {
-    if (result === "unlocked") {
-      if (kind === "heat" && typeof playHeatRiseCeremony === "function") playHeatRiseCeremony(subject);
-      else if (kind === "tag" && typeof playTagUnlockCeremony === "function") playTagUnlockCeremony(subject);
+    // Heat: a "yes" raises only MY OWN dial server-side (respond_progression)
+    // — never a mutual-consent "unlocked" anymore, so this applies it
+    // locally too (the realtime echo of my own resulting event is filtered
+    // out as "my own", same guard against downgrading a stale proposal's
+    // target that the server applies).
+    if (kind === "heat" && answer === true && TIER_ORDER.indexOf(subject) > TIER_ORDER.indexOf(myTierDial)) {
+      applyMyTierDialLocally(subject);
+    } else if (kind === "tag" && result === "unlocked" && typeof playTagUnlockCeremony === "function") {
+      playTagUnlockCeremony(subject);
     }
     return refreshCoupleProgression();
   }).catch(function () {
@@ -2669,15 +2829,13 @@ function playTagUnlockCeremony(tag) {
 // Heat-rise ceremony — an ember-glow pulse (the .ceremony-heat modifier
 // on the same overlay) with the tier name igniting, echoing the card
 // draw's ignition sound rather than the tag ceremony's softer sparkle.
-// Updates sessionHeatCeiling and the tier UI immediately, so the new
-// tier's content is playable the instant the ceremony starts — no
-// separate refetch needed to unblock the pool.
+// Purely visual — callers (setMyTierDial, applyRemoteHeatChanged) are
+// responsible for updating dial state and tier UI *before* calling this,
+// and only call it when the EFFECTIVE (played) heat actually rose, so a
+// personal dial nudge that changes nothing stays quiet.
 function playHeatRiseCeremony(tier) {
   var el = document.getElementById("tagUnlockCeremony");
   if (!el || !tier) return;
-  sessionHeatCeiling = tier;
-  if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
-  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
 
   var labelEl = document.getElementById("tagUnlockCeremonyLabel");
   var textEl = document.getElementById("tagUnlockCeremonyTag");
@@ -2710,10 +2868,25 @@ function applyRemoteTagUnlocked(ev) {
   refreshCoupleProgression();
 }
 
+// Own echoes are already filtered out upstream (handleGameEvent), so any
+// heat_changed event reaching here is the partner's — updates only
+// partnerTierDial, never myTierDial. Plays the ceremony only when this
+// actually raises the EFFECTIVE (played) heat (both dials now reach a
+// new shared tier) — if the partner is still catching up to a tier I'm
+// already at, or has simply lowered their own dial, this stays quiet.
 function applyRemoteHeatChanged(ev) {
   var tier = (ev.payload || {}).tier;
-  if (!tier) return;
-  playHeatRiseCeremony(tier);
+  if (!tier || TIER_ORDER.indexOf(tier) === -1) return;
+  var before = getEffectiveHeatTier();
+  partnerTierDial = tier;
+  if (typeof refreshTierReadout === "function") refreshTierReadout();
+  if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+  if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
+  if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+  var after = getEffectiveHeatTier();
+  if (TIER_ORDER.indexOf(after) > TIER_ORDER.indexOf(before)) {
+    playHeatRiseCeremony(after);
+  }
   refreshCoupleProgression();
 }
 
@@ -3313,6 +3486,20 @@ window.showOnboarding = function () {
   document.getElementById("onboarding").classList.remove("hidden");
 };
 
+// Defaults to 'adaptive' per spec ("Default highlight on Adaptive"); set
+// from the current myHeatMode instead whenever the onboarding overlay is
+// re-opened for name edits (see updateNames), so a returning player sees
+// their actual current choice rather than being reset to the default.
+var onboardingHeatModeChoice = "adaptive";
+
+window.selectOnboardingHeatMode = function (mode) {
+  onboardingHeatModeChoice = mode;
+  var adaptiveCard = document.getElementById("onboardingHeatModeAdaptive");
+  var manualCard = document.getElementById("onboardingHeatModeManual");
+  if (adaptiveCard) adaptiveCard.classList.toggle("heat-mode-card-selected", mode === "adaptive");
+  if (manualCard) manualCard.classList.toggle("heat-mode-card-selected", mode === "manual");
+};
+
 window.submitOnboarding = function () {
   let p1 = document.getElementById("p1Input").value.trim();
   let p2 = document.getElementById("p2Input").value.trim();
@@ -3322,6 +3509,17 @@ window.submitOnboarding = function () {
   player2Name = p2;
   localStorage.setItem("player1Name", player1Name);
   localStorage.setItem("player2Name", player2Name);
+
+  myHeatMode = onboardingHeatModeChoice;
+  localStorage.setItem("heatMode", myHeatMode);
+  if (window.Backend && window.Backend.isLoggedIn()) {
+    window.Backend.setHeatMode(myHeatMode).catch(function () {
+      // Low-stakes — the local choice still applies this session; the
+      // Account page toggle can retry the save later.
+    });
+  }
+  if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
+
   document.getElementById("onboarding").classList.add("hidden");
   updateNameDisplays();
   updateTurnDisplay();
@@ -3330,6 +3528,7 @@ window.submitOnboarding = function () {
 window.updateNames = function () {
   document.getElementById("p1Input").value = localStorage.getItem("player1Name") || "";
   document.getElementById("p2Input").value = localStorage.getItem("player2Name") || "";
+  window.selectOnboardingHeatMode(myHeatMode === "adaptive" ? "adaptive" : "manual");
   document.getElementById("menu").classList.remove("menu-open");
   document.getElementById("onboarding").classList.remove("hidden");
 };
@@ -3339,7 +3538,10 @@ window.addEventListener("load", function () {
   updateNameDisplays();
   updateDrinkModeUI();
   refreshTierSelectIcons();
-  setSelectedTruthTier(selectedTruthTier);
+  refreshTruthTierDropdownSelection();
+  if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+  if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
+  if (typeof refreshTierReadout === "function") refreshTierReadout();
   if (typeof updateSoundMuteUI === "function") updateSoundMuteUI();
   if (typeof recordHomeVisit === "function") recordHomeVisit();
   if (typeof renderHomeHero === "function") renderHomeHero();
@@ -3411,7 +3613,7 @@ window.handleSignUp = async function () {
   if (!name) { errEl.innerText = "Tell us what to call you."; return; }
   if (!email || !password) { errEl.innerText = "Enter your email and password."; return; }
   try {
-    await window.Backend.signUp(email, password, name);
+    await window.Backend.signUp(email, password, name, myHeatMode);
     renderAccountPage();
     if (!window.Backend.isInCouple()) {
       openCoupleChoiceModal();
@@ -3608,42 +3810,52 @@ function renderAccountCoupleArea() {
         '<p class="auth-sub small">Waiting for your partner to join…</p>' +
       "</div>";
   } else {
-    var mode = coupleProgression.progressionMode || "manual";
+    // Heat mode used to live here as a couple-level toggle; it's now a
+    // per-user preference (see renderAccountHeatMode, in the Your
+    // Profile section above) so each partner sets their own.
     area.innerHTML =
       '<p class="auth-sub">Linked with <strong>' + escapeHtml(couple.partnerName) + '</strong> 💞</p>' +
-      '<div class="progression-mode-section">' +
-        '<div class="progression-mode-label">Progression</div>' +
-        '<p class="auth-sub small">' +
-          (mode === "adaptive"
-            ? "The game quietly paces itself to how tonight is going, and still only ever asks — never unlocks anything on its own."
-            : "You and your partner unlock things together, on your own terms.") +
-        "</p>" +
-        '<div class="auth-tabs progression-mode-tabs">' +
-          '<button class="auth-tab' + (mode === "manual" ? " active" : "") + '" onclick="handleSetProgressionMode(\'manual\')">Manual</button>' +
-          '<button class="auth-tab' + (mode === "adaptive" ? " active" : "") + '" onclick="handleSetProgressionMode(\'adaptive\')">Adaptive</button>' +
-        "</div>" +
-        '<p id="progressionModeError" class="auth-error"></p>' +
-      "</div>" +
       '<button onclick="handleLeaveCouple()" class="auth-secondary-btn">Leave Couple</button>';
   }
 }
 
-// Either partner can flip the couple's progression mode; visible to both
-// via get_couple_progression. Idempotent-ish from the UI's perspective —
-// re-picking the already-active mode just re-renders the same state.
-function handleSetProgressionMode(mode) {
-  if (!window.Backend || !isSyncActive()) return;
-  var err = document.getElementById("progressionModeError");
+// Per-user — only affects how MY OWN tier moves; my partner keeps
+// whatever mode they've chosen independently (see Part C: mode is a
+// private preference with no effect on the other partner). Available to
+// any logged-in user, couple-linked or not.
+function renderAccountHeatMode() {
+  var manualBtn = document.getElementById("acctHeatModeManualBtn");
+  var adaptiveBtn = document.getElementById("acctHeatModeAdaptiveBtn");
+  var desc = document.getElementById("acctHeatModeDesc");
+  if (!manualBtn || !adaptiveBtn) return;
+  var mode = myHeatMode || "manual";
+  manualBtn.classList.toggle("active", mode === "manual");
+  adaptiveBtn.classList.toggle("active", mode === "adaptive");
+  if (desc) {
+    desc.innerText = mode === "adaptive"
+      ? "The game paces your own tier to how tonight is going, and still only ever asks — never moves it on its own."
+      : "Pick your own heat anytime — nothing moves until you say so.";
+  }
+}
+
+function handleSetHeatMode(mode) {
+  if (!window.Backend || !window.Backend.isLoggedIn()) return;
+  var err = document.getElementById("acctHeatModeError");
   if (err) err.innerText = "";
-  window.Backend.setProgressionMode(mode)
-    .then(function () { return refreshCoupleProgression(); })
-    .then(function () { renderAccountCoupleArea(); })
+  window.Backend.setHeatMode(mode)
+    .then(function () {
+      myHeatMode = mode;
+      localStorage.setItem("heatMode", mode);
+      renderAccountHeatMode();
+      if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
+      if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+    })
     .catch(function (e) {
-      var errEl = document.getElementById("progressionModeError");
-      if (errEl) errEl.innerText = (e && e.message) || "Couldn't update progression mode. Please try again.";
+      var errEl = document.getElementById("acctHeatModeError");
+      if (errEl) errEl.innerText = (e && e.message) || "Couldn't update heat mode. Please try again.";
     });
 }
-window.handleSetProgressionMode = handleSetProgressionMode;
+window.handleSetHeatMode = handleSetHeatMode;
 
 function renderAccountPage() {
   var recoveryArea = document.getElementById("acctRecoveryArea");
@@ -3663,6 +3875,7 @@ function renderAccountPage() {
     authArea.classList.add("hidden");
     profileArea.classList.remove("hidden");
     renderAccountProfile();
+    renderAccountHeatMode();
     renderAccountCoupleArea();
     if (isSyncActive()) {
       refreshCoupleProgression().then(function () { renderAccountCoupleArea(); });
@@ -3714,6 +3927,10 @@ function isSyncActive() {
 
 function gameSyncMyId() {
   return window.GameSync ? window.GameSync.getMyUserId() : null;
+}
+
+function gameSyncPartnerId() {
+  return window.GameSync && window.GameSync.getPartnerId ? window.GameSync.getPartnerId() : null;
 }
 
 function genRoundId() {
@@ -3834,11 +4051,22 @@ function handleGameBackendChange() {
   if (window.Backend && window.Backend.isLoggedIn()) {
     window.Backend.getProfile().then(function (p) {
       gameSyncMyName = (p && p.display_name) || "You";
+      myHeatMode = (p && p.heat_mode) || "manual";
       applySyncVisibility();
       if (typeof renderHomeHero === "function") renderHomeHero();
+      if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
     });
+    var partnerId = gameSyncPartnerId();
+    if (partnerId) {
+      window.Backend.getProfile(partnerId).then(function (p) {
+        partnerHeatMode = (p && p.heat_mode) || "manual";
+        if (typeof refreshTierReadout === "function") refreshTierReadout();
+      });
+    }
   } else {
     gameSyncMyName = "You";
+    myHeatMode = "manual";
+    partnerHeatMode = "manual";
   }
   reconcileGameSyncSubscription();
   if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
@@ -3915,11 +4143,13 @@ function findCurrentSessionEvents(events) {
   return events.slice(sessionStartIdx);
 }
 
-function computeSessionHeatFromEvents(events) {
+// heat_changed events are keyed by user_id (each partner's own dial) —
+// pass userId to get just that partner's current tier this session.
+function computeUserTierFromEvents(events, userId) {
   var sessionEvents = findCurrentSessionEvents(events);
   var tier = TIER_ORDER[0];
   for (var j = 0; j < sessionEvents.length; j++) {
-    if (sessionEvents[j].event_type === "heat_changed") {
+    if (sessionEvents[j].event_type === "heat_changed" && sessionEvents[j].user_id === userId) {
       var t = (sessionEvents[j].payload || {}).tier;
       if (t && TIER_ORDER.indexOf(t) !== -1) tier = t;
     }
@@ -3930,17 +4160,24 @@ function computeSessionHeatFromEvents(events) {
 // ========================= //
 // ADAPTIVE PROGRESSION ENGINE //
 // ========================= //
-// A per-device, read-only engine for 'adaptive' mode couples (see
-// setProgressionMode / renderAccountCoupleArea). It runs independently
-// on each partner's device and only ever DOES two things:
-//   1. Proposes — via the exact same window.Backend.createProgressionProposal
-//      RPC and both-yes-decides flow as a manually-tapped "Dare we..."
-//      button. A system proposal carries no marker distinguishing it from
-//      a manual one — proposals already render with no proposer shown, so
-//      this is invisible by construction, not by extra effort.
+// A per-device, per-user, read-only engine — active only for a user who
+// has personally chosen 'adaptive' heat mode (see Backend.setHeatMode).
+// Partners can be in different modes; each engine only ever acts on the
+// device's OWN user, never the partner's (see Part C: mode is a private
+// preference with no effect on the other partner). It only ever DOES two
+// things:
+//   1. Proposes raising MY OWN dial — via the exact same
+//      window.Backend.createProgressionProposal/respondProgression RPCs
+//      as a manually-tapped "Turn up the heat?" tap. A system proposal
+//      carries no marker distinguishing it from a human-initiated one —
+//      proposals already render with no proposer shown, so this is
+//      invisible by construction, not by extra effort. Accepting only
+//      ever raises the accepting device's own dial (see
+//      respond_progression) — the couple's EFFECTIVE heat (the min of
+//      both dials) only rises once both partners have reached the tier.
 //   2. Biases which tier gets drawn from, silently, within the existing
-//      session heat ceiling — never touching the ceiling itself, never
-//      unlocking a tag, never writing any event or row anywhere.
+//      effective heat — never touching either dial, never unlocking a
+//      tag, never writing any event or row anywhere.
 // It is fully dormant (isAdaptiveEngineActive() false) in manual mode,
 // for unlinked couples, and for logged-out users — every entry point
 // below is gated on that one check, so those three cases are
@@ -3967,10 +4204,12 @@ var ADAPTIVE_ENGINE = {
   COOLING_MAX_YES_LOVE_SHARE: 0.4      // yes/love share at/below this reads as "souring"
 };
 
-// True only for logged-in, linked couples in 'adaptive' mode — the single
-// gate every engine entry point below funnels through.
+// True only for a logged-in, linked user who has personally chosen
+// 'adaptive' heat mode — the single gate every engine entry point below
+// funnels through. Per-user, not couple-level: the partner's mode has no
+// bearing on whether THIS device's engine runs.
 function isAdaptiveEngineActive() {
-  return isSyncActive() && coupleProgression.progressionMode === "adaptive";
+  return isSyncActive() && myHeatMode === "adaptive";
 }
 
 // The last events snapshot the engine has seen — refreshed alongside the
@@ -4079,11 +4318,12 @@ function checkHeatReadiness(events) {
   var hasOpenHeatProposal = (coupleProgression.openProposals || []).some(function (p) { return p.kind === "heat"; });
   if (hasOpenHeatProposal) return;
 
-  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  var effectiveTier = getEffectiveHeatTier();
+  var ceilingIdx = TIER_ORDER.indexOf(effectiveTier);
   if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return; // already at max
 
   var sessionEvents = findCurrentSessionEvents(events);
-  var bucket = computeTierRoundBucket(sessionEvents, sessionHeatCeiling);
+  var bucket = computeTierRoundBucket(sessionEvents, effectiveTier);
   if (bucket.resolved < ADAPTIVE_ENGINE.HEAT_MIN_RESOLVED_ROUNDS) return;
   if (bucket.completionShare < ADAPTIVE_ENGINE.HEAT_MIN_COMPLETION_SHARE) return;
 
@@ -4097,7 +4337,7 @@ function checkHeatReadiness(events) {
 // Same RPC call as window.proposeHeatUp — deliberately indistinguishable.
 function proposeSystemHeatUp() {
   if (!window.Backend || !isSyncActive()) return;
-  var ceilingIdx = TIER_ORDER.indexOf(sessionHeatCeiling);
+  var ceilingIdx = TIER_ORDER.indexOf(getEffectiveHeatTier());
   if (ceilingIdx === -1 || ceilingIdx >= TIER_ORDER.length - 1) return;
   var nextTier = TIER_ORDER[ceilingIdx + 1];
   heatProposedThisSession = true;
@@ -4219,7 +4459,7 @@ function proposeSystemTag(tag) {
 function checkCoolingActive(events) {
   if (!isAdaptiveEngineActive()) return false;
   var sessionEvents = findCurrentSessionEvents(events);
-  var bucket = computeTierRoundBucket(sessionEvents, sessionHeatCeiling);
+  var bucket = computeTierRoundBucket(sessionEvents, getEffectiveHeatTier());
 
   var skipSouring = bucket.resolved >= ADAPTIVE_ENGINE.COOLING_MIN_SIGNAL_ROUNDS &&
     bucket.organicSkipShare >= ADAPTIVE_ENGINE.COOLING_MIN_ORGANIC_SKIP_SHARE;
@@ -4307,7 +4547,11 @@ async function rebuildGameStateFromServer() {
   updateScoreDisplay();
   updateWheelScoreDisplay();
 
-  sessionHeatCeiling = computeSessionHeatFromEvents(events);
+  myTierDial = computeUserTierFromEvents(events, gameSyncMyId());
+  partnerTierDial = computeUserTierFromEvents(events, gameSyncPartnerId());
+  if (typeof refreshTruthTierDropdownSelection === "function") refreshTruthTierDropdownSelection();
+  if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
+  if (typeof refreshTierReadout === "function") refreshTierReadout();
   if (typeof updateTierSelectOptions === "function") updateTierSelectOptions();
   if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
 
@@ -4683,7 +4927,7 @@ window.playPowerCard = function (cardType) {
 
 window.openWildcardPicker = function () {
   if (!myHand.wildcard || myHand.wildcard < 1 || syncTruthRound) return;
-  var tier = getSelectedTier();
+  var tier = getEffectiveHeatTier();
   var pool = getWildcardPool(tier);
   var list = document.getElementById("wildcardList");
   var empty = document.getElementById("wildcardEmpty");
@@ -4809,6 +5053,13 @@ document.addEventListener("click", function (e) {
       closeTruthTierDropdown(false);
     }
   }
+  if (typeof adaptiveHeatPanelOpen !== "undefined" && adaptiveHeatPanelOpen) {
+    var heatPanel = document.getElementById("adaptiveHeatPanel");
+    var heatTrigger = document.getElementById("adaptiveHeatTrigger");
+    if (!isInside(heatPanel) && !isInside(heatTrigger)) {
+      closeAdaptiveHeatPanel(false);
+    }
+  }
 });
 
 document.addEventListener("keydown", function (e) {
@@ -4816,6 +5067,7 @@ document.addEventListener("keydown", function (e) {
   if (isLeftMenuOpen()) window.toggleMenu();
   if (typeof cardMenuOpen !== "undefined" && cardMenuOpen) window.toggleCardMenu();
   if (typeof truthTierDropdownOpen !== "undefined" && truthTierDropdownOpen) closeTruthTierDropdown();
+  if (typeof adaptiveHeatPanelOpen !== "undefined" && adaptiveHeatPanelOpen) closeAdaptiveHeatPanel();
 });
 
 // Swipe toward the menu's own hinge edge closes it. Listens only on the
