@@ -71,15 +71,20 @@ body::before {
   text-overflow: ellipsis;
 }
 
-/* Side menu */
+/* Side menu — width tracks the viewport (70-75%) rather than a fixed
+   px value, so open/closed is driven by a transform (width-agnostic)
+   instead of a hardcoded left offset. */
 .menu {
   position: fixed;
   top: 0;
-  left: -260px;
-  width: 260px;
+  left: 0;
+  width: 73%;
+  max-width: 300px;
   height: 100%;
+  box-sizing: border-box;
   background: #171015;
-  transition: 0.3s;
+  transform: translateX(-100%);
+  transition: transform 0.3s;
   padding-top: 65px;
   text-align: left;
   z-index: 10;
@@ -87,14 +92,18 @@ body::before {
   overflow-y: auto;
 }
 
+.menu.menu-open {
+  transform: translateX(0);
+}
+
 .menu a {
   display: block;
-  padding: 20px 22px;
+  padding: 12px 18px;
   color: #fff5f7;
   text-decoration: none;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 32px;
+  font-size: 1.3rem;
   line-height: 1.25;
 }
 
@@ -1898,17 +1907,24 @@ hr {
 .card-menu {
   position: fixed;
   top: 0;
-  right: -320px;
-  width: 300px;
+  right: 0;
+  width: 85%;
+  max-width: 360px;
   height: 100%;
+  box-sizing: border-box;
   background: #171015;
-  transition: 0.3s;
-  padding: 65px 18px 24px;
+  transform: translateX(100%);
+  transition: transform 0.3s;
+  padding: 65px 16px 24px;
   text-align: left;
   z-index: 10;
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.6);
   overflow-y: auto;
   border-left: 1px solid rgba(201, 169, 122, 0.15);
+}
+
+.card-menu.card-menu-open {
+  transform: translateX(0);
 }
 
 .card-menu-header {
@@ -1944,28 +1960,31 @@ hr {
 .card-shop-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 22px;
+  gap: 6px;
+  margin-bottom: 16px;
 }
 
+/* Compact enough that 3-4 cards are visible per screen — the density
+   comes from padding/gap/button-height, not from shrinking the
+   description below 14px (see .card-shop-effect). */
 .card-shop-item {
   background: linear-gradient(145deg, #1a1e24, #242a30);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 10px;
 }
 
 .card-shop-item-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 
 .card-shop-name {
   font-family: 'Playfair Display', serif;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   color: #fff5f7;
 }
 
@@ -1973,25 +1992,34 @@ hr {
   font-size: 13px;
   font-weight: 700;
   color: #c9a97a;
+  transition: color 0.15s, transform 0.15s;
+}
+
+/* Out of reach at the player's current balance — a distinct color (not
+   just the disabled button below) so affordability reads at a glance
+   even before the eye reaches the Buy button. */
+.card-shop-cost.card-shop-cost-unaffordable {
+  color: #ff9b9b;
+  transform: scale(1.05);
 }
 
 .card-shop-effect {
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(255, 245, 247, 0.55);
-  line-height: 1.5;
-  margin-bottom: 10px;
+  line-height: 1.35;
+  margin-bottom: 6px;
 }
 
 .card-shop-owned {
   font-size: 11px;
   font-weight: 600;
   color: #7ddc97;
-  margin-bottom: 8px;
+  margin-bottom: 5px;
 }
 
 .card-shop-buy-btn {
   width: 100%;
-  padding: 9px;
+  padding: 6px;
   margin: 0;
   font-size: 13px;
 }
@@ -2015,9 +2043,9 @@ hr {
 }
 
 .card-shop-locked-text {
-  font-size: 13px;
+  font-size: 14px;
   color: rgba(255, 245, 247, 0.65);
-  line-height: 1.5;
+  line-height: 1.4;
   margin: 0 0 12px;
 }
 
@@ -2036,9 +2064,9 @@ hr {
 
 .card-shop-lock-overlay {
   position: absolute;
-  top: 12px;
-  right: 14px;
-  font-size: 16px;
+  top: 8px;
+  right: 10px;
+  font-size: 14px;
 }
 
 .card-shop-hand-section { margin-top: 4px; }
