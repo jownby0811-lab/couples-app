@@ -947,12 +947,16 @@
   <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
   <p id="wheelScoreDisplay" class="wheel-score-display hidden"></p>
 
+  <p id="wheelEligibilityNotice" class="wheel-eligibility-notice hidden">Rate more dares and positions in Personalize to light up the whole wheel.</p>
+
   <div id="wheelResultTeaser" class="wheel-result-teaser hidden">
     <span class="wheel-result-teaser-glyph" id="wheelResultTeaserGlyph"></span>
     <span class="wheel-result-teaser-text">
       <span class="wheel-result-teaser-name" id="wheelResultTeaserName"></span>
       <span class="wheel-result-teaser-desc" id="wheelResultTeaserDesc"></span>
     </span>
+    <button type="button" id="wheelResultTeaserDrawBtn" class="wheel-result-teaser-draw-btn" onclick="performWheelDraw()">Draw</button>
+    <span id="wheelResultTeaserWaitText" class="wheel-result-teaser-wait hidden"></span>
   </div>
 
   <div class="wheel-wrapper">
@@ -983,6 +987,19 @@
 
     <div id="wheelWaitSection" style="display:none; text-align:center; margin-top:15px;">
       <p id="wheelWaitText" class="judge-wait-text"></p>
+    </div>
+
+    <div id="inGameRatingStripWheel" class="ingame-rating-strip hidden">
+      <div class="ingame-rating-row">
+        <span class="ingame-rating-label">How was this one?</span>
+        <button class="ingame-rating-dismiss" onclick="dismissInGameRating()">✕</button>
+      </div>
+      <div class="pos-rating-buttons" id="inGameRatingButtonsWheel">
+        <button data-rating="no" onclick="setInGameRating('no')">🚫 No</button>
+        <button data-rating="maybe" onclick="setInGameRating('maybe')">🤔 Maybe</button>
+        <button data-rating="yes" onclick="setInGameRating('yes')">👍 Yes</button>
+        <button data-rating="love" onclick="setInGameRating('love')">💕 Love</button>
+      </div>
     </div>
 
     <button id="wheelNextTurnBtn" class="wheel-next-btn" style="display:none;" onclick="wheelNextTurn()">Next Turn ➡️</button>

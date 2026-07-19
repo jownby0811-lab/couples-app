@@ -21,13 +21,16 @@ window.showPage = function (pageId) {
     if (typeof refreshTierReadout === "function") refreshTierReadout();
   }
   if (pageId === "wheel" && typeof initWheelPage === "function") {
+    updateMatchedOnlyUI();
     buildWheelSvg();
     renderWheelRotation(wheelRotationDeg);
     renderWheelLandedState(wheelLandedSegment);
+    if (typeof refreshAllPreferenceCaches === "function") refreshAllPreferenceCaches();
     if (typeof refreshCoupleProgression === "function") refreshCoupleProgression();
     if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
     if (typeof refreshTierReadout === "function") refreshTierReadout();
     if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+    if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
   }
   if (pageId === "home" && typeof initHomePage === "function") {
     initHomePage();
@@ -972,6 +975,7 @@ function applyMyTierDialLocally(tier) {
   if (typeof refreshAdaptiveHeatDisplay === "function") refreshAdaptiveHeatDisplay();
   if (typeof refreshTierReadout === "function") refreshTierReadout();
   if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+  if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
   var after = getEffectiveHeatTier();
   if (TIER_ORDER.indexOf(after) > TIER_ORDER.indexOf(before) && typeof playHeatRiseCeremony === "function") {
     playHeatRiseCeremony(after);
@@ -2465,9 +2469,13 @@ function applyRemotePointsAwarded(ev) {
   showStatus("You +" + (p.amount || 0) + " 🔥");
   showSyncOutcome(isWheel ? "wheelCard" : "todCard", (p.amount || 0) > 0);
   if (isWheel) {
+    var wheelRound = syncWheelRound;
     resetWheelSyncUI();
     var nb = document.getElementById("wheelNextTurnBtn");
     if (nb) nb.style.display = "inline-block";
+    if (wheelRound && wheelRound.cardKind === "dare" && wheelRound.cardIndex != null) {
+      showInGameRatingStrip("dare", wheelRound.tier, wheelRound.cardIndex, "wheel");
+    }
   } else {
     var round = syncTruthRound;
     endSyncTruthRound();
@@ -2501,8 +2509,15 @@ function applyRemoteTruthJudged(ev) {
 // to reuse for both — the database's composite key and these per-type
 // caches keep them apart.
 
-var itemRatings = { dare: {}, truth: {} };       // itemType -> item_id -> rating
-var itemMutualMatches = { dare: {}, truth: {} }; // itemType -> item_id -> love (boolean)
+var itemRatings = { dare: {}, truth: {} };                 // itemType -> item_id -> rating
+var itemMutualMatches = { dare: {}, truth: {}, position: {} }; // itemType -> item_id -> love (boolean)
+// Positions aren't tier-bucketed like dares/truths (one flat positionsData
+// array, matched by Backend.getMutualMatches("position") keyed on the
+// position's own id directly) — so itemMutualMatches.position is keyed by
+// String(position.id), not tierItemId(). Only mutual-match presence is
+// tracked (no itemRatings.position cache): the Wheel's Position segment
+// only ever needs "is this a mutual match," never "did I rate this no,"
+// since a mutual match already implies neither partner said no.
 var matchedOnly = localStorage.getItem("matchedOnly") === "true";
 var personalizeTab = "dare"; // 'dare' | 'truth'
 var personalizeFilter = "all";
@@ -2532,6 +2547,8 @@ async function refreshAllPreferenceCaches() {
   await refreshItemRatings("truth");
   await refreshItemMutualMatches("dare");
   await refreshItemMutualMatches("truth");
+  await refreshItemMutualMatches("position");
+  if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
 }
 
 // Preference/Matched Only filtering moved into pool.js
@@ -2541,6 +2558,7 @@ window.toggleMatchedOnly = function () {
   matchedOnly = !matchedOnly;
   localStorage.setItem("matchedOnly", matchedOnly);
   updateMatchedOnlyUI();
+  if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
 };
 
 function updateMatchedOnlyUI() {
@@ -2581,6 +2599,26 @@ var coupleProgression = { progressionMode: null, unlockedTags: [], openProposals
 var activeProgressionPromptId = null;
 var activeProgressionPromptTag = null;
 var activeProgressionPromptKind = null; // 'tag' | 'heat'
+
+// The couple's most recently unlocked ADVANCED tag (never a BASE_TAGS
+// member — those are never "unlocked", they're always playable) — the
+// Wheel's Wildcard segment routes to whatever this currently is. Updated
+// live wherever a tag unlock resolves (see respondToProgressionPrompt,
+// applyRemoteTagUnlocked) and re-derived from event history on
+// reconnect/rebuild (see rebuildGameStateFromServer) since it's not part
+// of the get_couple_progression() RPC's response shape.
+var lastUnlockedTag = null;
+
+// Falls back to scanning coupleProgression.unlockedTags (unordered) only
+// if lastUnlockedTag was never set this session and no tag_unlocked
+// event history is available — picks arbitrarily in that edge case
+// rather than surfacing nothing, since any unlocked tag is a valid
+// Wildcard target even without knowing which came last.
+function getMostRecentlyUnlockedTag() {
+  var unlocked = coupleProgression.unlockedTags || [];
+  if (lastUnlockedTag && unlocked.indexOf(lastUnlockedTag) !== -1) return lastUnlockedTag;
+  return unlocked.length ? unlocked[unlocked.length - 1] : null;
+}
 
 // The heatCeiling passed to window.Pool.getPlayablePool — null (no
 // restriction) for solo/unlinked users, so their pool is byte-identical
@@ -2664,6 +2702,7 @@ async function refreshCoupleProgression() {
   if (typeof renderProgressionTagSections === "function") renderProgressionTagSections();
   if (typeof maybeShowProgressionPrompt === "function") maybeShowProgressionPrompt();
   if (typeof updateHeatAmbianceUI === "function") updateHeatAmbianceUI();
+  if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
 }
 
 // Propose unlocking a tag together — idempotent server-side, so calling
@@ -2780,8 +2819,9 @@ window.respondToProgressionPrompt = function (answer) {
     // target that the server applies).
     if (kind === "heat" && answer === true && TIER_ORDER.indexOf(subject) > TIER_ORDER.indexOf(myTierDial)) {
       applyMyTierDialLocally(subject);
-    } else if (kind === "tag" && result === "unlocked" && typeof playTagUnlockCeremony === "function") {
-      playTagUnlockCeremony(subject);
+    } else if (kind === "tag" && result === "unlocked") {
+      lastUnlockedTag = subject;
+      if (typeof playTagUnlockCeremony === "function") playTagUnlockCeremony(subject);
     }
     return refreshCoupleProgression();
   }).catch(function () {
@@ -2910,6 +2950,7 @@ window.dismissTagUnlockCeremony = dismissTagUnlockCeremony;
 function applyRemoteTagUnlocked(ev) {
   var tag = (ev.payload || {}).tag;
   if (!tag) return;
+  lastUnlockedTag = tag;
   playTagUnlockCeremony(tag);
   refreshCoupleProgression();
 }
@@ -3489,23 +3530,36 @@ function renderInsightsUs() {
 // Backend.saveRating, exactly like the Personalize page; it's never
 // broadcast as a game event, so the partner never sees it.
 
-var inGameRatingMeta = null; // { itemType, tier, cardIndex }
+// Truth or Dare and Spin the Wheel each have their own instance of this
+// strip (page-suffixed ids, same pattern as the tier control) so wheel
+// draws routed through the shared pool.js pipeline get the identical
+// post-completion rating flow without reaching into Truth's DOM subtree,
+// which is hidden whenever the Wheel page is active.
+var RATING_STRIP_IDS = {
+  truth: { strip: "inGameRatingStrip", buttons: "inGameRatingButtons" },
+  wheel: { strip: "inGameRatingStripWheel", buttons: "inGameRatingButtonsWheel" }
+};
+var inGameRatingMeta = null; // { itemType, tier, cardIndex, page }
 
-function showInGameRatingStrip(itemType, tier, cardIndex) {
-  var strip = document.getElementById("inGameRatingStrip");
+function showInGameRatingStrip(itemType, tier, cardIndex, page) {
+  page = page === "wheel" ? "wheel" : "truth";
+  var ids = RATING_STRIP_IDS[page];
+  var strip = document.getElementById(ids.strip);
   if (!strip || (itemType !== "truth" && itemType !== "dare") || tier == null || cardIndex == null) return;
-  inGameRatingMeta = { itemType: itemType, tier: tier, cardIndex: cardIndex };
+  inGameRatingMeta = { itemType: itemType, tier: tier, cardIndex: cardIndex, page: page };
   var id = tierItemId(tier, cardIndex);
   var existingRating = itemRatings[itemType][id];
-  document.querySelectorAll("#inGameRatingButtons button").forEach(function (b) {
+  document.querySelectorAll("#" + ids.buttons + " button").forEach(function (b) {
     b.classList.toggle("active-toggle", b.getAttribute("data-rating") === existingRating);
   });
   strip.classList.remove("hidden");
 }
 
 function hideInGameRatingStrip() {
-  var strip = document.getElementById("inGameRatingStrip");
-  if (strip) strip.classList.add("hidden");
+  Object.keys(RATING_STRIP_IDS).forEach(function (page) {
+    var strip = document.getElementById(RATING_STRIP_IDS[page].strip);
+    if (strip) strip.classList.add("hidden");
+  });
   inGameRatingMeta = null;
 }
 
@@ -3518,7 +3572,8 @@ window.setInGameRating = function (rating) {
   var itemType = inGameRatingMeta.itemType;
   var id = tierItemId(inGameRatingMeta.tier, inGameRatingMeta.cardIndex);
   itemRatings[itemType][id] = rating;
-  document.querySelectorAll("#inGameRatingButtons button").forEach(function (b) {
+  var ids = RATING_STRIP_IDS[inGameRatingMeta.page];
+  document.querySelectorAll("#" + ids.buttons + " button").forEach(function (b) {
     b.classList.toggle("active-toggle", b.getAttribute("data-rating") === rating);
   });
   if (window.Backend) {
@@ -3964,8 +4019,7 @@ var gameSyncMyName = "You";
 var gameSyncPartnerName = "";
 var syncScores = { mine: 0, partner: 0 };
 var syncTruthRound = null; // { roundId, tier, mode, cardIndex, performerId, myRole }
-var syncWheelRound = null; // { roundId, tier, segmentIndex, tag, cardKind, cardIndex, positionId, performerId, myRole }
-var wheelPendingForcedCard = null;
+var syncWheelRound = null; // { roundId, tier, segmentIndex, performerId, myRole, drawn, cardKind, cardIndex, positionId, resolvedTag }
 
 function isSyncActive() {
   return !!(window.GameSync && window.GameSync.isActive());
@@ -4139,6 +4193,7 @@ function handleGameEvent(ev) {
     case "points_awarded": applyRemotePointsAwarded(ev); break;
     case "truth_judged": applyRemoteTruthJudged(ev); break;
     case "wheel_spun": applyRemoteWheelSpun(ev); break;
+    case "wheel_drawn": applyRemoteWheelDrawn(ev); break;
     case "points_spent": applyRemotePointsSpent(ev); break;
     case "card_played": applyRemoteCardPlayed(ev); break;
     case "tag_unlocked": applyRemoteTagUnlocked(ev); break;
@@ -4580,7 +4635,11 @@ function findPendingRound(events, kind) {
     if (kind === "truth_or_dare" && isTruthOrDareStarter) {
       return resolvedRoundIds[(ev.payload || {}).roundId] ? null : ev;
     }
-    if (kind === "wheel" && ev.event_type === "wheel_spun") {
+    // wheel_drawn is chronologically later than its round's wheel_spun
+    // (same roundId), so scanning backward naturally returns whichever
+    // is more recent — drawn-and-revealed if a draw happened, landed-
+    // but-not-yet-drawn otherwise. See restoreWheelRound.
+    if (kind === "wheel" && (ev.event_type === "wheel_spun" || ev.event_type === "wheel_drawn")) {
       return resolvedRoundIds[(ev.payload || {}).roundId] ? null : ev;
     }
   }
@@ -4591,6 +4650,13 @@ async function rebuildGameStateFromServer() {
   if (!window.GameSync || !window.GameSync.isActive()) return;
   gameSyncPartnerName = window.GameSync.getPartnerName() || "";
   var events = await window.GameSync.fetchRecent(200);
+
+  for (var ti = events.length - 1; ti >= 0; ti--) {
+    if (events[ti].event_type === "tag_unlocked") {
+      lastUnlockedTag = (events[ti].payload || {}).tag || lastUnlockedTag;
+      break;
+    }
+  }
 
   var scores = computeScoresFromEvents(events);
   syncScores.mine = scores.mine;
@@ -4616,6 +4682,9 @@ async function rebuildGameStateFromServer() {
   var wheelStarter = findPendingRound(events, "wheel");
   if (wheelStarter) restoreWheelRound(wheelStarter);
   else resetWheelSyncUI();
+
+  if (typeof refreshCoupleProgression === "function") await refreshCoupleProgression();
+  if (typeof refreshWheelEligibility === "function") refreshWheelEligibility();
 
   var balances = computeCardBalanceFromEvents(events);
   cardBalance.mine = balances.mine;
@@ -5610,18 +5679,20 @@ var wheelHasSpunOnce = false;
 
 // Fixed category segments — no longer keyed by tier (see index.html Wheel
 // section comment / PR notes: the wheel's category set is now the same
-// regardless of the player's current heat tier; only the DARES drawn for
-// a given category vary by tier, same as everywhere else in the app).
-// Wildcard has no tag: it draws from the full effective-heat dare pool,
-// same shape as a plain untagged "Dare" draw elsewhere in the app.
+// regardless of the player's current heat tier; only the CONTENT drawn
+// for a given category varies by tier, same as everywhere else in the
+// app. Five of the seven are fixed-tag dare draws; Position always
+// requires a mutual match (mode:'position'); Wildcard's tag is resolved
+// dynamically to the couple's most-recently-unlocked tag (dynamicTag) —
+// see getWheelSegmentPool/getMostRecentlyUnlockedTag below.
 var WHEEL_SEGMENTS = [
-  { key: 'manual',     label: 'Manual',     tag: 'manual',     iconKey: 'wheelManualChoice', tagline: 'Hands-on, your way.' },
-  { key: 'dirty-talk', label: 'Dirty Talk', tag: 'dirty-talk', iconKey: 'wheelDirtyTalk',     tagline: "Say what you're thinking.", sm: true },
-  { key: 'position',   label: 'Position',   tag: 'position',   iconKey: 'positions',          tagline: 'A new position to try.' },
-  { key: 'kissing',    label: 'Kissing',    tag: 'kissing',    iconKey: 'wheelKissing',        tagline: 'Slow down and kiss.' },
-  { key: 'teasing',    label: 'Teasing',    tag: 'teasing',    iconKey: 'tease',               tagline: 'Build it up slowly.' },
-  { key: 'massage',    label: 'Massage',    tag: 'massage',    iconKey: 'wheelMassage',        tagline: 'Hands-on and unhurried.' },
-  { key: 'wildcard',   label: 'Wildcard',   tag: null,         iconKey: 'dareWeTryThis',       tagline: 'Anything from your deck.' }
+  { key: 'manual',     label: 'Manual',     mode: 'dare',     tag: 'manual',     iconKey: 'wheelManualChoice', tagline: 'Hands-on, your way.' },
+  { key: 'dirty-talk', label: 'Dirty Talk', mode: 'dare',     tag: 'dirty-talk', iconKey: 'wheelDirtyTalk',     tagline: "Say what you're thinking.", sm: true },
+  { key: 'position',   label: 'Position',   mode: 'position', tag: null,        iconKey: 'positions',          tagline: 'A mutually matched position.' },
+  { key: 'kissing',    label: 'Kissing',    mode: 'dare',     tag: 'kissing',    iconKey: 'wheelKissing',       tagline: 'Slow down and kiss.' },
+  { key: 'teasing',    label: 'Teasing',    mode: 'dare',     tag: 'teasing',    iconKey: 'tease',              tagline: 'Build it up slowly.' },
+  { key: 'massage',    label: 'Massage',    mode: 'dare',     tag: 'massage',    iconKey: 'wheelMassage',       tagline: 'Hands-on and unhurried.' },
+  { key: 'wildcard',   label: 'Wildcard',   mode: 'dare',     tag: null, dynamicTag: true, iconKey: 'dareWeTryThis', tagline: 'Whatever you just unlocked.' }
 ];
 var WHEEL_SEG_COUNT = WHEEL_SEGMENTS.length;
 var WHEEL_SEG_ANGLE = 360 / WHEEL_SEG_COUNT;
@@ -5631,6 +5702,107 @@ var WHEEL_SEG_ANGLE = 360 / WHEEL_SEG_COUNT;
 var WHEEL_SEG_COLOR_CLASS = ['navy', 'rose', 'silver', 'navy', 'rose', 'silver', 'ember'].map(function (c) {
   return 'wheel-fill-' + c;
 });
+
+function formatTagLabel(tag) { return (tag || "").replace(/-/g, " "); }
+
+// The pool every wheel segment's draw actually comes from — the SAME
+// pool.js pipeline (effective heat via heatCeiling, unlockedTags, and
+// the mutual-preference/Matched Only filter) that Truth or Dare's own
+// getDare/getTruth/syncDrawCard use, just parameterized per segment
+// instead of hardcoded. No wheel draw bypasses these filters. Position
+// always passes matchedOnly:true regardless of the couple's global
+// Matched Only toggle — that IS what "Position" means on this wheel, not
+// a toggle-dependent behavior like the other six. Wildcard's tag is
+// resolved fresh on every call (dynamicTag), so a newly unlocked tag
+// retargets it automatically without any extra plumbing.
+// `strict` is passed true only by the eligibility check below — it
+// disables pool.js's "drop the tag requirement rather than show nothing"
+// fallback, so eligibility can tell genuine tag-emptiness apart from the
+// fallback quietly having found something else to show. The actual draw
+// path (pickWheelSegmentContent) always calls this non-strict, keeping
+// that fallback as a defensive safety net against state drift between
+// an eligibility check and the moment the couple taps Draw.
+function getWheelSegmentPool(seg, tier, strict) {
+  if (seg.mode === "position") {
+    return window.Pool.getPlayablePool({ mode: "position", tier: tier, matchedOnly: true });
+  }
+  var tag = seg.dynamicTag ? getMostRecentlyUnlockedTag() : seg.tag;
+  if (seg.dynamicTag && !tag) return { items: [], fullList: [] };
+  var opts = {
+    mode: "dare", tier: tier, matchedOnly: matchedOnly,
+    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
+  };
+  if (tag) opts.requireTag = tag;
+  if (strict) opts.strictTag = true;
+  return window.Pool.getPlayablePool(opts);
+}
+
+// ---- Eligibility ----
+// Computed before every spin (and whenever tier/preference/unlock state
+// changes) so the landing algorithm never selects a segment with nothing
+// playable, and the UI can dim it with a reason on tap instead of
+// silently never landing there.
+function getWheelSegmentEligibility(seg, tier) {
+  if (seg.dynamicTag && !getMostRecentlyUnlockedTag()) {
+    return { eligible: false, reason: "Unlock a tag in Personalize to light this up." };
+  }
+  var pool = getWheelSegmentPool(seg, tier, true);
+  var eligible = pool.items.length > 0;
+  var reason;
+  if (seg.mode === "position") {
+    reason = "No matched positions at this heat yet.";
+  } else if (seg.dynamicTag) {
+    reason = "No matched " + formatTagLabel(getMostRecentlyUnlockedTag()) + " prompts at this heat yet.";
+  } else {
+    reason = "No matched " + seg.label.toLowerCase() + " prompts at this heat yet.";
+  }
+  return { eligible: eligible, reason: reason };
+}
+
+var wheelEligibility = {
+  eligible: WHEEL_SEGMENTS.map(function () { return true; }),
+  reasons: WHEEL_SEGMENTS.map(function () { return ""; })
+};
+
+function computeWheelEligibility() {
+  var tier = getEffectiveDrawTier(getEffectiveHeatTier());
+  var eligible = [], reasons = [];
+  WHEEL_SEGMENTS.forEach(function (seg) {
+    var r = getWheelSegmentEligibility(seg, tier);
+    eligible.push(r.eligible);
+    reasons.push(r.reason);
+  });
+  return { eligible: eligible, reasons: reasons };
+}
+
+function pickEligibleWheelSegmentIndex() {
+  var idxs = [];
+  wheelEligibility.eligible.forEach(function (e, i) { if (e) idxs.push(i); });
+  if (!idxs.length) return -1;
+  return idxs[Math.floor(Math.random() * idxs.length)];
+}
+
+// Recomputed on: page show, tier/dial changes (mine or the partner's —
+// effective heat is a min of both), a tag unlocking, and the Matched
+// Only toggle — anything that could change what's playable. Segments
+// render dimmed via wheel-segment-ineligible (see renderWheelEligibilityUI)
+// and the landing pick (pickEligibleWheelSegmentIndex) only ever
+// considers eligible indices.
+function refreshWheelEligibility() {
+  wheelEligibility = computeWheelEligibility();
+  renderWheelEligibilityUI();
+}
+
+function renderWheelEligibilityUI() {
+  wheelSegmentEls.forEach(function (el, i) {
+    el.classList.toggle('wheel-segment-ineligible', !wheelEligibility.eligible[i]);
+  });
+  var eligibleCount = wheelEligibility.eligible.filter(Boolean).length;
+  var notice = document.getElementById('wheelEligibilityNotice');
+  if (notice) notice.classList.toggle('hidden', eligibleCount >= 3);
+  var spinBtn = document.getElementById('wheelSpinBtn');
+  if (spinBtn && !wheelIsSpinning) spinBtn.disabled = eligibleCount === 0;
+}
 
 var WHEEL_CX = 190, WHEEL_CY = 190, WHEEL_OUTER_R = 182;
 var wheelSvgBuilt = false;
@@ -5711,6 +5883,15 @@ function buildWheelSvg() {
 
   wheelSvgBuilt = true;
   wheelSegmentEls = Array.prototype.slice.call(svg.querySelectorAll('.wheel-segment'));
+  // Tapping a dimmed (ineligible) segment surfaces why — eligible
+  // segments do nothing on tap, since only the Spin button drives a spin.
+  wheelSegmentEls.forEach(function (el, i) {
+    el.addEventListener('click', function () {
+      if (wheelIsSpinning) return;
+      if (!wheelEligibility.eligible[i]) showStatus(wheelEligibility.reasons[i] || "Not enough matched content yet.");
+    });
+  });
+  renderWheelEligibilityUI();
 }
 
 function renderWheelRotation(deg) {
@@ -5760,6 +5941,7 @@ function initWheelPage() {
   renderWheelRotation(0);
   renderWheelLandedState(-1);
   setWheelSpinBtnState('idle');
+  refreshWheelEligibility();
 }
 
 function updateWheelTurnDisplay() {
@@ -5789,7 +5971,7 @@ function easeOutBackWheel(t) {
   return 1 + c3 * x * x * x + c1 * x * x;
 }
 
-function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
+function startWheelSpinAnimation(segmentIndex, targetNormOverride) {
   var spinBtn = document.getElementById('wheelSpinBtn');
   if (spinBtn) spinBtn.disabled = true;
   setWheelSpinBtnState('spinning');
@@ -5808,7 +5990,7 @@ function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
 
   wheelIsSpinning = true;
   wheelLandedSegment = segmentIndex;
-  wheelPendingForcedCard = forcedCard || null;
+  wheelDrawnMeta = null;
   renderWheelLandedState(-1);
 
   // Pointer at top = 270° screen. Segment i center = (i+0.5)*segAngle
@@ -5863,7 +6045,10 @@ function startWheelSpinAnimation(segmentIndex, targetNormOverride, forcedCard) {
 window.spinWheel = function () {
   if (wheelIsSpinning) return;
   if (isSyncActive()) { syncSpin(); return; }
-  startWheelSpinAnimation(Math.floor(Math.random() * WHEEL_SEG_COUNT), null, null);
+  refreshWheelEligibility();
+  var idx = pickEligibleWheelSegmentIndex();
+  if (idx === -1) { showStatus("Rate more content in Personalize to light up the wheel 💌"); return; }
+  startWheelSpinAnimation(idx, null);
 };
 
 function onWheelSpinComplete() {
@@ -5875,26 +6060,35 @@ function onWheelSpinComplete() {
   if (spinBtn) spinBtn.disabled = false;
   setWheelSpinBtnState('result');
   showWheelResultTeaser(WHEEL_SEGMENTS[wheelLandedSegment]);
-  setTimeout(function () {
-    showWheelResult(wheelPendingForcedCard);
-    wheelPendingForcedCard = null;
-  }, 700);
 }
 
 // The small "what did we land on" card shown above the wheel the instant
-// it settles — category + one-line description only. The deeper reveal
-// (the actual dare/position text) is the existing card further down,
-// shown a beat later by showWheelResult. This card's action button ships
-// in a follow-up PR; for now it's read-only.
+// it settles — category + one-line description + a primary action that
+// performs the actual routed draw (see performWheelDraw). The deeper
+// reveal (the real dare/position text) is the existing card further
+// down, shown once that draw resolves. Solo/unlinked sessions can draw
+// immediately; synced sessions restrict the action to the performer
+// (whoever spun) — the judge sees a waiting state instead, mirroring
+// Truth or Dare's own performer/judge split.
 function showWheelResultTeaser(seg) {
   var el = document.getElementById('wheelResultTeaser');
   if (!el || !seg) return;
   var glyph = document.getElementById('wheelResultTeaserGlyph');
   var name = document.getElementById('wheelResultTeaserName');
   var desc = document.getElementById('wheelResultTeaserDesc');
+  var drawBtn = document.getElementById('wheelResultTeaserDrawBtn');
+  var waitText = document.getElementById('wheelResultTeaserWaitText');
   if (glyph) glyph.innerHTML = appIcon(seg.iconKey, "wheel-result-teaser-glyph-img", "", true);
   if (name) name.textContent = seg.label;
   if (desc) desc.textContent = seg.tagline;
+
+  var isJudge = isSyncActive() && syncWheelRound && syncWheelRound.myRole === 'judge';
+  if (drawBtn) drawBtn.classList.toggle('hidden', isJudge);
+  if (waitText) {
+    waitText.classList.toggle('hidden', !isJudge);
+    if (isJudge) waitText.textContent = (gameSyncPartnerName || 'Your partner') + ' is drawing…';
+  }
+
   el.classList.remove('hidden', 'wheel-result-teaser-play');
   void el.offsetWidth;
   el.classList.add('wheel-result-teaser-play');
@@ -5907,67 +6101,86 @@ function wheelCardColorClass() {
   return wheelCurrentPlayer === 'john' ? 'player1-card' : 'player2-card';
 }
 
-// Draws the dare pool for a wheel segment at the given tier — Wildcard
-// has no tag (a plain untagged draw, same shape as elsewhere in the
-// app); the other six pass their tag through requireTag. pool.js itself
-// already falls back to the unlockedTags-filtered (untagged) pool if a
-// segment's tag has no dares written yet at this tier, same as every
-// other requireTag caller — nothing wheel-specific needed here. Shared
-// by the solo draw (showWheelResult) and the server-authoritative draw
-// (syncSpin) so both pick from the exact same pool shape.
-function drawWheelDarePool(tier, seg) {
-  var opts = {
-    mode: "dare", tier: tier, respectGender: false, respectPreferences: false,
-    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
-  };
-  if (seg.tag) opts.requireTag = seg.tag;
-  return window.Pool.getPlayablePool(opts);
+// Picks the actual content for a landed segment through the same pool.js
+// pipeline every other draw in the app uses (see getWheelSegmentPool).
+// Returns null if the pool is empty — shouldn't happen for a segment
+// that was eligible at landing time, but state can shift in the beat
+// between landing and drawing (e.g. the partner just lowered their
+// dial), so this stays defensive rather than assuming it can't.
+function pickWheelSegmentContent(seg, tier) {
+  var pool = getWheelSegmentPool(seg, tier);
+  if (!pool.items.length) return null;
+  var picked = pool.items[Math.floor(Math.random() * pool.items.length)];
+  if (seg.mode === "position") {
+    return { kind: "position", positionId: picked.id, resolvedTag: null };
+  }
+  var resolvedTag = seg.dynamicTag ? getMostRecentlyUnlockedTag() : seg.tag;
+  return { kind: "dare", cardIndex: pool.fullList.indexOf(picked), resolvedTag: resolvedTag };
 }
 
-function showWheelResult(forcedCard, skipTimerSchedule) {
-  var tier = getWheelTier();
-  var seg = WHEEL_SEGMENTS[wheelLandedSegment];
+// Solo-mode-only bookkeeping for the rating strip: solo wheel dare
+// rounds have no judge/points step (see startWheelTimer's completion
+// handler below), so there's no natural place to carry {tier, cardIndex}
+// through to "show the rating strip" the way syncAwardWheelPoints does
+// for synced rounds — this fills that gap.
+var wheelDrawnMeta = null;
 
+// Tapping the result teaser's primary action performs the actual routed
+// draw for the landed segment. Solo/unlinked draws immediately; synced
+// draws are performer-only and broadcast via 'wheel_drawn' (see
+// syncWheelDraw) so the partner sees the identical resolved content
+// instead of rolling their own.
+window.performWheelDraw = function () {
+  if (isSyncActive()) {
+    syncWheelDraw();
+    return;
+  }
+  var seg = WHEEL_SEGMENTS[wheelLandedSegment];
+  var tier = getWheelTier();
+  var picked = pickWheelSegmentContent(seg, tier);
+  if (!picked) { showStatus("No cards available for this player 😅"); return; }
+  renderWheelDrawnCard(seg, tier, picked);
+};
+
+// Renders already-resolved content — called after a solo/local pick
+// (performWheelDraw), after the performer's own pick is broadcast
+// (syncWheelDraw), on the partner's device (applyRemoteWheelDrawn), and
+// on reconnect for an already-drawn round (restoreWheelRound).
+function renderWheelDrawnCard(seg, tier, picked, skipTimerSchedule) {
   var cardEl     = document.getElementById('wheelCard');
   var cardLabel  = document.getElementById('wheelCardLabel');
   var cardText   = document.getElementById('wheelCardText');
   var resultArea = document.getElementById('wheelResultArea');
+  var teaser     = document.getElementById('wheelResultTeaser');
+  if (teaser) teaser.classList.add('hidden');
 
-  // Player border color
   cardEl.classList.remove('player1-card', 'player2-card');
   cardEl.classList.add(wheelCardColorClass());
 
-  if (seg.tag === 'position') {
-    var pos = null;
-    if (forcedCard && forcedCard.positionId != null) {
-      pos = positionsData.filter(function (p) { return p.id === forcedCard.positionId; })[0] || null;
-    }
-    if (!pos) {
-      var posPool = window.Pool.getPlayablePool({ mode: "position", tier: tier });
-      pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
-    }
-    cardLabel.innerHTML = appIcon("positions", "action-btn-icon", "", true) + 'POSITION';
-    cardText.innerHTML =
-      '<strong style="font-size:17px;">' + pos.name + '</strong>' +
-      '<span style="font-size:13px;opacity:0.82;line-height:1.65;display:block;margin-top:7px;">' + pos.description + '</span>' +
-      '<span style="font-size:11px;opacity:0.58;display:block;margin-top:8px;">💡 ' + pos.tips + '</span>';
+  // Wildcard's label reveals which tag it resolved to, so the couple
+  // sees what "Wildcard" currently means rather than a generic label.
+  var displayLabel = (seg.key === 'wildcard' && picked.resolvedTag)
+    ? 'Wildcard — ' + formatTagLabel(picked.resolvedTag)
+    : seg.label;
+
+  if (picked.kind === 'position') {
+    var pos = positionsData.filter(function (p) { return p.id === picked.positionId; })[0] || null;
+    cardLabel.innerHTML = appIcon('positions', 'action-btn-icon', '', true) + escapeHtml(displayLabel.toUpperCase());
+    cardText.innerHTML = pos
+      ? '<strong style="font-size:17px;">' + pos.name + '</strong>' +
+        '<span style="font-size:13px;opacity:0.82;line-height:1.65;display:block;margin-top:7px;">' + pos.description + '</span>' +
+        '<span style="font-size:11px;opacity:0.58;display:block;margin-top:8px;">💡 ' + pos.tips + '</span>'
+      : 'No cards available for this player 😅';
+    wheelDrawnMeta = null;
   } else {
-    var dares = gameData[tier].dares;
-    var dare = null;
-    if (forcedCard && forcedCard.cardIndex != null) {
-      dare = dares[forcedCard.cardIndex] || null;
-    }
-    if (!dare) {
-      var darePool = drawWheelDarePool(tier, seg);
-      dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
-    }
-    cardLabel.innerHTML = appIcon(seg.iconKey, "action-btn-icon", "", true) + seg.label.toUpperCase();
+    var dare = gameData[tier].dares[picked.cardIndex];
+    cardLabel.innerHTML = appIcon(seg.iconKey, 'action-btn-icon', '', true) + escapeHtml(displayLabel.toUpperCase());
     cardText.innerText = dare ? dare.text : "No cards available for this player 😅";
+    wheelDrawnMeta = dare ? { kind: 'dare', tier: tier, cardIndex: picked.cardIndex } : null;
   }
 
   resultArea.style.display = 'block';
 
-  // Burn reveal
   cardEl.classList.remove('wheel-burn-reveal');
   void cardEl.offsetWidth;
   cardEl.classList.add('wheel-burn-reveal');
@@ -6023,6 +6236,13 @@ window.startWheelTimer = function () {
         } else {
           var nb = document.getElementById('wheelNextTurnBtn');
           if (nb) nb.style.display = 'inline-block';
+          // Solo wheel dare rounds have no judge/points step to hang the
+          // rating strip off of (unlike synced rounds — see
+          // syncAwardWheelPoints/applyRemotePointsAwarded) — this is
+          // solo's equivalent "the round is done" moment.
+          if (!isSyncActive() && wheelDrawnMeta && wheelDrawnMeta.kind === 'dare') {
+            showInGameRatingStrip('dare', wheelDrawnMeta.tier, wheelDrawnMeta.cardIndex, 'wheel');
+          }
         }
       }, 500);
     } else {
@@ -6035,6 +6255,7 @@ window.wheelNextTurn = function () {
   if (typeof markRoundPlayed === "function") markRoundPlayed();
   var teaser = document.getElementById('wheelResultTeaser');
   if (teaser) teaser.classList.add('hidden');
+  wheelDrawnMeta = null;
   if (isSyncActive()) {
     resetWheelSyncUI();
     document.getElementById('wheelResultArea').style.display = 'none';
@@ -6043,6 +6264,7 @@ window.wheelNextTurn = function () {
     if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
     wheelTimerRunning = false;
     renderWheelLandedState(-1);
+    refreshWheelEligibility();
     if (typeof refreshEngineSnapshot === "function") refreshEngineSnapshot();
     return;
   }
@@ -6054,53 +6276,43 @@ window.wheelNextTurn = function () {
   if (wheelTimerInterval) { clearInterval(wheelTimerInterval); wheelTimerInterval = null; }
   wheelTimerRunning = false;
   renderWheelLandedState(-1);
+  refreshWheelEligibility();
 };
 
 // ========================= //
 // SPIN WHEEL SYNC           //
 // ========================= //
-// Same performer/judge role rule as Truth or Dare, reusing its
-// 'points_awarded' event so both modes feed one running score. The
-// outcome (segment + exact landing angle + which card/position) is
-// decided once by whoever spins and broadcast — the partner's wheel
-// replays that same outcome rather than rolling its own. The segment
-// index always refers to WHEEL_SEGMENTS, so both devices land on the
-// identical category regardless of which one's dial happened to move
-// the effective heat most recently.
+// Two events per round: 'wheel_spun' (the spin itself — which segment,
+// exact landing angle, who spun) and 'wheel_drawn' (the actual routed
+// content, sent once the performer taps the result teaser's primary
+// action — see performWheelDraw/syncWheelDraw). Splitting them mirrors
+// the landing/drawing split in the UI: both devices animate the
+// identical landing from 'wheel_spun', then both devices reveal the
+// identical drawn content from 'wheel_drawn' rather than either rolling
+// its own — same "decided once, broadcast, replayed" shape as Truth or
+// Dare's 'card_drawn'. Reuses Truth or Dare's 'points_awarded' event so
+// both modes feed one running score.
 
 function syncSpin() {
+  refreshWheelEligibility();
+  var segmentIndex = pickEligibleWheelSegmentIndex();
+  if (segmentIndex === -1) { showStatus("Rate more content in Personalize to light up the wheel 💌"); return; }
   var tier = getEffectiveDrawTier(getEffectiveHeatTier());
-  var segmentIndex = Math.floor(Math.random() * WHEEL_SEG_COUNT);
-  var seg = WHEEL_SEGMENTS[segmentIndex];
   var roundId = genRoundId();
   var performerId = gameSyncMyId();
 
-  var forcedCard = { cardIndex: null, positionId: null };
-  if (seg.tag === 'position') {
-    var posPool = window.Pool.getPlayablePool({ mode: "position", tier: tier });
-    var pos = posPool.items[Math.floor(Math.random() * posPool.items.length)];
-    forcedCard.positionId = pos.id;
-  } else {
-    var darePool = drawWheelDarePool(tier, seg);
-    var dare = darePool.items[Math.floor(Math.random() * darePool.items.length)];
-    forcedCard.cardIndex = darePool.fullList.indexOf(dare);
-  }
-
   syncWheelRound = {
-    roundId: roundId, tier: tier, segmentIndex: segmentIndex, tag: seg.tag,
-    cardKind: seg.tag === 'position' ? 'position' : 'dare',
-    cardIndex: forcedCard.cardIndex, positionId: forcedCard.positionId,
-    performerId: performerId, myRole: 'performer'
+    roundId: roundId, tier: tier, segmentIndex: segmentIndex,
+    performerId: performerId, myRole: 'performer', drawn: false
   };
 
   var label = document.getElementById('wheelSpunByLabel');
   if (label) label.classList.add('hidden');
 
-  var targetNorm = startWheelSpinAnimation(segmentIndex, null, forcedCard);
+  var targetNorm = startWheelSpinAnimation(segmentIndex, null);
 
   window.GameSync.send('wheel_spun', {
     roundId: roundId, tier: tier, segmentIndex: segmentIndex, targetRotationDeg: targetNorm,
-    tag: seg.tag, cardKind: syncWheelRound.cardKind, cardIndex: forcedCard.cardIndex, positionId: forcedCard.positionId,
     performer_user_id: performerId
   });
 }
@@ -6111,9 +6323,8 @@ function applyRemoteWheelSpun(ev) {
   var myRole = p.performer_user_id === myId ? 'performer' : 'judge';
 
   syncWheelRound = {
-    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
-    cardKind: p.cardKind, cardIndex: p.cardIndex, positionId: p.positionId,
-    performerId: p.performer_user_id, myRole: myRole
+    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex,
+    performerId: p.performer_user_id, myRole: myRole, drawn: false
   };
 
   var label = document.getElementById('wheelSpunByLabel');
@@ -6123,16 +6334,59 @@ function applyRemoteWheelSpun(ev) {
   }
 
   if (wheelIsSpinning) return;
-  startWheelSpinAnimation(p.segmentIndex, p.targetRotationDeg, { cardIndex: p.cardIndex, positionId: p.positionId });
+  startWheelSpinAnimation(p.segmentIndex, p.targetRotationDeg);
 }
 
-// Reconnect/rebuild path: jump straight to the resolved reveal + the
-// right judge/wait controls, rather than replaying the spin animation
-// and a from-scratch timer for a round that's already in progress.
+// Performer-only — resolves the landed segment's actual content and
+// broadcasts it as 'wheel_drawn'. Called from performWheelDraw when
+// synced.
+function syncWheelDraw() {
+  if (!syncWheelRound || syncWheelRound.myRole !== 'performer' || syncWheelRound.drawn) return;
+  var seg = WHEEL_SEGMENTS[syncWheelRound.segmentIndex];
+  var tier = syncWheelRound.tier;
+  var picked = pickWheelSegmentContent(seg, tier);
+  if (!picked) { showStatus("No cards available for this player 😅"); return; }
+
+  syncWheelRound.drawn = true;
+  syncWheelRound.cardKind = picked.kind;
+  syncWheelRound.cardIndex = picked.kind === 'dare' ? picked.cardIndex : null;
+  syncWheelRound.positionId = picked.kind === 'position' ? picked.positionId : null;
+  syncWheelRound.resolvedTag = picked.resolvedTag;
+
+  renderWheelDrawnCard(seg, tier, picked);
+
+  window.GameSync.send('wheel_drawn', {
+    roundId: syncWheelRound.roundId, segmentIndex: syncWheelRound.segmentIndex, tier: tier,
+    cardKind: picked.kind, cardIndex: syncWheelRound.cardIndex, positionId: syncWheelRound.positionId,
+    resolvedTag: picked.resolvedTag, performer_user_id: syncWheelRound.performerId
+  });
+}
+
+function applyRemoteWheelDrawn(ev) {
+  var p = ev.payload || {};
+  if (!syncWheelRound || syncWheelRound.roundId !== p.roundId) return;
+  syncWheelRound.drawn = true;
+  syncWheelRound.cardKind = p.cardKind;
+  syncWheelRound.cardIndex = p.cardIndex;
+  syncWheelRound.positionId = p.positionId;
+  syncWheelRound.resolvedTag = p.resolvedTag;
+
+  var seg = WHEEL_SEGMENTS[syncWheelRound.segmentIndex];
+  var picked = p.cardKind === 'position'
+    ? { kind: 'position', positionId: p.positionId, resolvedTag: null }
+    : { kind: 'dare', cardIndex: p.cardIndex, resolvedTag: p.resolvedTag };
+  renderWheelDrawnCard(seg, p.tier, picked);
+}
+
+// Reconnect/rebuild path: jump straight to whichever state the round was
+// actually in — landed-but-not-drawn (still show the teaser + primary
+// action) or fully drawn (jump to the resolved reveal + judge/wait
+// controls) — rather than replaying the spin animation from scratch.
 function restoreWheelRound(starterEvent) {
   var p = starterEvent.payload || {};
   var myId = gameSyncMyId();
   var myRole = p.performer_user_id === myId ? "performer" : "judge";
+  var isDrawn = starterEvent.event_type === "wheel_drawn";
 
   wheelLandedSegment = p.segmentIndex;
   wheelHasSpunOnce = true;
@@ -6143,9 +6397,12 @@ function restoreWheelRound(starterEvent) {
   setWheelSpinBtnState('result');
 
   syncWheelRound = {
-    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex, tag: p.tag,
-    cardKind: p.cardKind, cardIndex: p.cardIndex, positionId: p.positionId,
-    performerId: p.performer_user_id, myRole: myRole
+    roundId: p.roundId, tier: p.tier, segmentIndex: p.segmentIndex,
+    performerId: p.performer_user_id, myRole: myRole, drawn: isDrawn,
+    cardKind: isDrawn ? p.cardKind : undefined,
+    cardIndex: isDrawn ? p.cardIndex : undefined,
+    positionId: isDrawn ? p.positionId : undefined,
+    resolvedTag: isDrawn ? p.resolvedTag : undefined
   };
 
   var label = document.getElementById("wheelSpunByLabel");
@@ -6158,7 +6415,16 @@ function restoreWheelRound(starterEvent) {
     }
   }
 
-  showWheelResult({ cardIndex: p.cardIndex, positionId: p.positionId }, true);
+  if (!isDrawn) {
+    showWheelResultTeaser(WHEEL_SEGMENTS[wheelLandedSegment]);
+    return;
+  }
+
+  var seg = WHEEL_SEGMENTS[p.segmentIndex];
+  var picked = p.cardKind === "position"
+    ? { kind: "position", positionId: p.positionId, resolvedTag: null }
+    : { kind: "dare", cardIndex: p.cardIndex, resolvedTag: p.resolvedTag };
+  renderWheelDrawnCard(seg, p.tier, picked, true);
   var timerArea = document.getElementById("wheelTimerArea");
   if (timerArea) timerArea.style.display = "none";
 
@@ -6175,9 +6441,11 @@ function resetWheelSyncUI() {
   var judgeSection = document.getElementById('wheelJudgeSection');
   var waitSection = document.getElementById('wheelWaitSection');
   var label = document.getElementById('wheelSpunByLabel');
+  var teaser = document.getElementById('wheelResultTeaser');
   if (judgeSection) judgeSection.style.display = 'none';
   if (waitSection) waitSection.style.display = 'none';
   if (label) label.classList.add('hidden');
+  if (teaser) teaser.classList.add('hidden');
 }
 
 function showWheelJudgeUI() {
@@ -6208,6 +6476,9 @@ function syncAwardWheelPoints(amount) {
   applySyncScoreDelta(round.performerId, amount);
   showStatus((gameSyncPartnerName || 'Partner') + ' +' + amount + ' 🔥');
   showSyncOutcome('wheelCard', amount > 0);
+  if (round.cardKind === 'dare' && round.cardIndex != null) {
+    showInGameRatingStrip('dare', round.tier, round.cardIndex, 'wheel');
+  }
   resetWheelSyncUI();
   var nb = document.getElementById('wheelNextTurnBtn');
   if (nb) nb.style.display = 'inline-block';
