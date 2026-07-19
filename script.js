@@ -4531,8 +4531,10 @@ function applyRemoteCardPlayed(ev) {
 }
 
 // ---- shop + hand tray UI ----
-// Visible only on the Truth or Dare page while synced with a partner —
-// solo/unlinked players never see any of this (see updateCardMenuVisibility).
+// The shop button is always visible on the Truth or Dare page (see
+// updateCardMenuVisibility). Synced couples see the real shop; solo and
+// unlinked players see a locked teaser instead (see renderCardShop) —
+// never hidden entirely, so they know the feature exists.
 
 window.toggleCardMenu = function () {
   var menu = document.getElementById("cardMenu");
@@ -4547,18 +4549,21 @@ window.toggleCardMenu = function () {
   }
 };
 
+// The shop button itself is always available on Truth or Dare now — solo
+// and unlinked players see a locked teaser (see renderCardShop) rather
+// than the button disappearing outright. Only actual play stays gated on
+// isSyncActive() (getPlayableCards, buyPowerCard, the hand tray).
 function updateCardMenuVisibility() {
   var btn = document.getElementById("cardMenuBtn");
   var truthSection = document.getElementById("truth");
   var onTruthPage = !!(truthSection && truthSection.classList.contains("active"));
-  var show = isSyncActive() && onTruthPage;
-  if (btn) btn.classList.toggle("hidden", !show);
-  if (!show) {
+  if (btn) btn.classList.toggle("hidden", !onTruthPage);
+  if (!onTruthPage) {
     var menu = document.getElementById("cardMenu");
     if (menu) menu.style.right = "-320px";
     cardMenuOpen = false;
   }
-  if (show) { renderCardShop(); renderHandTray(); }
+  if (onTruthPage) { renderCardShop(); renderHandTray(); }
   else {
     var tray = document.getElementById("handTray");
     if (tray) tray.classList.add("hidden");
@@ -4642,11 +4647,46 @@ window.addEventListener("load", function () {
   attachSwipeToClose(document.getElementById("cardMenu"), "right", function () { return typeof cardMenuOpen !== "undefined" && cardMenuOpen; }, function () { window.toggleCardMenu(); });
 });
 
+// Deep-links to the partner-connect flow (Account handles both "not
+// logged in yet" and "logged in but not linked" — it's the single
+// correct destination for either case, same as the home hero's own CTA).
+window.goToPartnerConnect = function () {
+  if (cardMenuOpen) window.toggleCardMenu();
+  window.showPage("account");
+};
+
 function renderCardShop() {
   var balanceEl = document.getElementById("cardShopBalance");
+  var list = document.getElementById("cardShopList");
+  var handSection = document.querySelector(".card-shop-hand-section");
+
+  if (!isSyncActive()) {
+    if (balanceEl) balanceEl.innerText = "🔒";
+    if (handSection) handSection.classList.add("hidden");
+    if (list) {
+      list.innerHTML =
+        "<div class=\"card-shop-locked-notice\">" +
+          "<p class=\"card-shop-locked-text\">Power cards are a couple thing — buy, hold, and play them together once you're linked.</p>" +
+          "<button type=\"button\" class=\"card-shop-unlock-btn\" onclick=\"goToPartnerConnect()\">Link your partner to unlock power cards</button>" +
+        "</div>" +
+        POWER_CARD_ORDER.map(function (cardType) {
+          var def = POWER_CARDS[cardType];
+          return "<div class=\"card-shop-item card-shop-item-locked\">" +
+            "<span class=\"card-shop-lock-overlay\" aria-hidden=\"true\">🔒</span>" +
+            "<div class=\"card-shop-item-head\">" +
+              "<span class=\"card-shop-name\">" + def.name + "</span>" +
+              "<span class=\"card-shop-cost\">" + def.cost + " pts</span>" +
+            "</div>" +
+            "<div class=\"card-shop-effect\">" + def.effect + "</div>" +
+          "</div>";
+        }).join("");
+    }
+    return;
+  }
+
+  if (handSection) handSection.classList.remove("hidden");
   if (balanceEl) balanceEl.innerText = cardBalance.mine + " pts";
 
-  var list = document.getElementById("cardShopList");
   if (list) {
     list.innerHTML = "";
     var atLimit = handCount() >= HAND_LIMIT;

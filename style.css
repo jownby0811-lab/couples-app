@@ -4,6 +4,13 @@ body {
   background: radial-gradient(ellipse at center, #060d1f 0%, #050810 50%, #020306 100%);
   color: #fff5f7;
   text-align: center;
+  /* body is the de-facto page wrapper (sections toggle visibility inside
+     it) — min-height keeps the dark gradient covering the full dynamic
+     viewport on short content instead of leaving unstyled space below
+     the footer; dvh (with a vh fallback for older browsers) tracks the
+     mobile browser chrome instead of the old, taller 100vh. */
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 body::before {
@@ -50,13 +57,16 @@ body::before {
   font-family: 'Playfair Display', serif;
   font-style: italic;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 1.6rem;
   background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   pointer-events: none;
   white-space: nowrap;
+  max-width: calc(100vw - 140px);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Side menu */
@@ -565,6 +575,15 @@ input {
   font-size: 16px;
 }
 
+/* font-size stays >=16px on every form control, deliberately — anything
+   smaller triggers iOS/Android's auto-zoom-on-focus, and the page then
+   stays zoomed in after the field blurs. select gets no other styling
+   here so it isn't scoped into the input/button box-model reset above. */
+select,
+textarea {
+  font-size: 16px;
+}
+
 button {
   cursor: pointer;
   background: linear-gradient(135deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
@@ -743,7 +762,7 @@ hr {
   color: white;
   border: 1.5px solid transparent;
   margin: 10px;
-  font-size: 15px;
+  font-size: 16px;
   font-family: 'Poppins', sans-serif;
   outline: none;
   cursor: pointer;
@@ -1980,7 +1999,46 @@ hr {
   transform: none;
 }
 
+/* ---- Locked teaser (solo/unlinked): same shop chrome, non-interactive ---- */
+
+.card-shop-locked-notice {
+  padding: 16px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: rgba(201, 169, 122, 0.08);
+  border: 1px solid rgba(201, 169, 122, 0.3);
+  text-align: center;
+}
+
+.card-shop-locked-text {
+  font-size: 13px;
+  color: rgba(255, 245, 247, 0.65);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.card-shop-unlock-btn {
+  width: 100%;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.card-shop-item-locked {
+  position: relative;
+  opacity: 0.45;
+  filter: grayscale(0.7);
+  pointer-events: none;
+}
+
+.card-shop-lock-overlay {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 16px;
+}
+
 .card-shop-hand-section { margin-top: 4px; }
+.card-shop-hand-section.hidden { display: none; }
 
 .card-shop-hand {
   display: flex;
@@ -2092,7 +2150,7 @@ hr {
   color: white;
   border: 1.5px solid transparent;
   margin: 10px;
-  font-size: 15px;
+  font-size: 16px;
   font-family: 'Poppins', sans-serif;
   outline: none;
   cursor: pointer;
@@ -2448,7 +2506,7 @@ hr {
   background: #24151d;
   color: white;
   font-family: 'Poppins', sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
   resize: vertical;
 }
