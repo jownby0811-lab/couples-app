@@ -71,15 +71,17 @@ body::before {
   text-overflow: ellipsis;
 }
 
-/* Side menu — width tracks the viewport (70-75%) rather than a fixed
+/* Side menu — width tracks the viewport (~50%) rather than a fixed
    px value, so open/closed is driven by a transform (width-agnostic)
-   instead of a hardcoded left offset. */
+   instead of a hardcoded left offset. Links are short single words
+   (or wrap to two lines, e.g. "Spin the Wheel") so the panel stays
+   narrow instead of widening to fit them. */
 .menu {
   position: fixed;
   top: 0;
   left: 0;
-  width: 73%;
-  max-width: 300px;
+  width: 50%;
+  max-width: 210px;
   height: 100%;
   box-sizing: border-box;
   background: #171015;
@@ -1908,8 +1910,8 @@ hr {
   position: fixed;
   top: 0;
   right: 0;
-  width: 85%;
-  max-width: 360px;
+  width: 70%;
+  max-width: 290px;
   height: 100%;
   box-sizing: border-box;
   background: #171015;
@@ -1978,6 +1980,7 @@ hr {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   margin-bottom: 3px;
 }
 
@@ -1992,6 +1995,8 @@ hr {
   font-size: 13px;
   font-weight: 700;
   color: #c9a97a;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color 0.15s, transform 0.15s;
 }
 
