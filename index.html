@@ -9,6 +9,18 @@
     <meta property="og:description" content="Truths, dares, positions, and a spin of the wheel for two.">
     <meta name="apple-mobile-web-app-title" content="Dare We?">
     <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,700&amp;family=Poppins:wght@300;400;600&amp;display=swap'><link rel="stylesheet" href="./style.css">
+    <script>
+      // Defined here (not script.js, which loads at the end of body) so it's
+      // guaranteed available the instant an icon <img> fails to load — an
+      // icon must never render as a broken-image glyph; it always falls
+      // back to its emoji instantly.
+      window.imgFallback = function (imgEl, emoji) {
+        var span = document.createElement("span");
+        span.className = imgEl.className;
+        span.textContent = emoji;
+        if (imgEl.parentNode) imgEl.parentNode.replaceChild(span, imgEl);
+      };
+    </script>
 
   </head>
     
@@ -423,7 +435,22 @@
     <button class="home-hero-cta" id="homeHeroCta">Start Playing — Free</button>
   </div>
 
-  <div class="home-trust-strip">🛡 Private ratings · 💕 Mutual matches only · 📱 Play together on your own phones.</div>
+  <div class="home-trust-strip">
+    <span class="trust-badge">
+      <img class="trust-badge-icon" src="assets/icons/private-ratings.png" width="28" height="28" alt="Private ratings" onerror="imgFallback(this,'🛡')">
+      Private ratings
+    </span>
+    <span class="trust-sep">·</span>
+    <span class="trust-badge">
+      <img class="trust-badge-icon" src="assets/icons/mutual-matches.png" width="28" height="28" alt="Mutual matches only" onerror="imgFallback(this,'💕')">
+      Mutual matches only
+    </span>
+    <span class="trust-sep">·</span>
+    <span class="trust-badge">
+      <img class="trust-badge-icon" src="assets/icons/linked-phones.png" width="28" height="28" alt="Play together on your own phones" onerror="imgFallback(this,'📱')">
+      Play together on your own phones.
+    </span>
+  </div>
 
   <div class="home-current-game hidden" id="homeCurrentGame">
     <div class="home-current-game-label">Current Game</div>
@@ -442,30 +469,33 @@
 
   <div class="home-game-grid">
     <div class="home-game-card home-game-card-featured" onclick="showPage('truth')">
-      <span class="home-game-chip">Start here 🔥</span>
+      <span class="home-game-chip">
+        <img class="home-game-chip-icon" src="assets/icons/start-here.png" width="16" height="16" alt="Start here" onerror="imgFallback(this,'🔥')">
+        Start here
+      </span>
       <div class="home-game-header">
-        <span class="home-game-icon">🎲</span>
+        <img class="home-game-icon" src="assets/icons/truth-or-dare.png" width="60" height="60" alt="Truth or Dare" onerror="imgFallback(this,'🎲')">
         <div class="home-game-name">Truth or Dare</div>
       </div>
       <div class="home-game-desc">Private truth and dare cards built from what you're both into.</div>
     </div>
     <div class="home-game-card" onclick="showPage('positions')">
       <div class="home-game-header">
-        <span class="home-game-icon">🔥</span>
+        <img class="home-game-icon" src="assets/icons/positions.png" width="60" height="60" alt="Positions" loading="lazy" onerror="imgFallback(this,'🔥')">
         <div class="home-game-name">Positions</div>
       </div>
       <div class="home-game-desc">Explore together; rate privately; find your matches.</div>
     </div>
     <div class="home-game-card" onclick="showPage('wheel')">
       <div class="home-game-header">
-        <span class="home-game-icon">🎡</span>
+        <img class="home-game-icon" src="assets/icons/spin-wheel.png" width="60" height="60" alt="Spin the Wheel" loading="lazy" onerror="imgFallback(this,'🎡')">
         <div class="home-game-name">Spin the Wheel</div>
       </div>
       <div class="home-game-desc">Let fate decide what's next.</div>
     </div>
     <div class="home-game-card" onclick="showPage('personalize')">
       <div class="home-game-header">
-        <span class="home-game-icon">💌</span>
+        <img class="home-game-icon" src="assets/icons/personalize.png" width="60" height="60" alt="Personalize" loading="lazy" onerror="imgFallback(this,'💌')">
         <div class="home-game-name">Personalize</div>
       </div>
       <div class="home-game-desc">Teach the deck what you love.</div>
@@ -832,7 +862,10 @@
 </div>
 
 <div id="account" class="section">
-  <h1>Account</h1>
+  <h1 class="acct-page-title">
+    <img class="acct-page-title-icon" src="assets/icons/couple-profile.png" width="40" height="40" alt="Account" loading="lazy" onerror="imgFallback(this,'💞')">
+    Account
+  </h1>
 
   <div id="acctRecoveryArea" class="auth-form hidden">
     <h2 class="auth-title">Set a New Password</h2>
