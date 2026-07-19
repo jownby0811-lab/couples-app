@@ -31,6 +31,37 @@ window.showPage = function (pageId) {
   if (typeof setGameSyncPage === "function") setGameSyncPage(pageId);
 };
 
+// ---- Gameplay icon set (assets/icons/gameplay/) ----
+// One mapping (icon key -> PNG path + fallback emoji) and one render
+// helper so every emoji->icon swap in this file goes through the same
+// place instead of scattering <img> literals. Falls back to the original
+// emoji instantly via the existing imgFallback() (defined in index.html)
+// if a PNG fails to load. Renders the @64 masters at a size set by the
+// className's own CSS (see GAMEPLAY ICONS in style.css).
+var GAMEPLAY_ICONS = {
+  tease:          { src: "assets/icons/gameplay/tease-feather@64.png",             emoji: "😏" },
+  foreplay:       { src: "assets/icons/gameplay/foreplay-flames@64.png",           emoji: "🔥" },
+  dirty:          { src: "assets/icons/gameplay/dirty-heart@64.png",               emoji: "😈" },
+  turnUpHeat:     { src: "assets/icons/gameplay/turn-up-the-heat@64.png",          emoji: "🔥" },
+  playerJohn:     { src: "assets/icons/gameplay/player-john-medallion@64.png",     emoji: "😎" },
+  playerFelicity: { src: "assets/icons/gameplay/player-felicity-medallion@64.png", emoji: "💕" },
+  newGame:        { src: "assets/icons/gameplay/new-game-refresh-card@64.png",     emoji: "🔄" },
+  drinkMode:      { src: "assets/icons/gameplay/drink-mode-coupe@64.png",          emoji: "🍺" },
+  matchedOnly:    { src: "assets/icons/gameplay/matched-only-hearts@64.png",       emoji: "💕" },
+  personalize:    { src: "assets/icons/gameplay/personalize-card-quill@64.png",    emoji: "💌" }
+};
+
+// className controls display size (see style.css); label is the alt text
+// unless decorative is true, in which case the icon is aria-hidden
+// because the text right next to it already says the same thing.
+function gameplayIcon(key, className, label, decorative) {
+  var def = GAMEPLAY_ICONS[key];
+  if (!def) return "";
+  var a11y = decorative ? ' alt="" aria-hidden="true"' : ' alt="' + label + '"';
+  return '<img class="' + className + '" src="' + def.src + '"' + a11y +
+    ' onerror="imgFallback(this,\'' + def.emoji + '\')">';
+}
+
 let johnScore = parseInt(localStorage.getItem("johnScore")) || 0;
 let felicityScore = parseInt(localStorage.getItem("felicityScore")) || 0;
 let player1Name = localStorage.getItem("player1Name") || "Him";
@@ -2221,6 +2252,24 @@ function updateTierSelectOptions() {
       sel.value = TIER_ORDER[ceilingIdx];
     }
   });
+  refreshTierSelectIcons();
+}
+
+// Keeps each tier <select>'s companion icon badge (see GAMEPLAY_ICONS)
+// in sync with its current value — covers both user-driven onchange
+// events and the programmatic ceiling clamp above, which sets .value
+// directly and so never fires a change event on its own.
+function refreshTierSelectIcons() {
+  [
+    ["tierSelect", "tierSelectIcon"],
+    ["personalizeTierSelect", "personalizeTierSelectIcon"],
+    ["wheelTierSelect", "wheelTierSelectIcon"]
+  ].forEach(function (pair) {
+    var sel = document.getElementById(pair[0]);
+    var icon = document.getElementById(pair[1]);
+    if (!sel || !icon) return;
+    icon.innerHTML = gameplayIcon(sel.value, "tier-select-icon-img", "", true);
+  });
 }
 
 // "Turn up the heat?" is hidden entirely for solo/unlinked users and
@@ -2240,13 +2289,15 @@ function updateTurnUpHeatButtons() {
     }
     btn.classList.remove("hidden");
     btn.disabled = hasOpenHeatProposal;
-    btn.innerText = hasOpenHeatProposal ? "Asked 💌" : "Turn up the heat? 🔥";
+    btn.innerHTML = hasOpenHeatProposal
+      ? "Asked 💌"
+      : gameplayIcon("turnUpHeat", "heat-btn-icon", "", true) + "Turn up the heat?";
   });
 }
 
 // Ambiance only — the current tier shown as a warm little cue next to
 // the selector, never a rank, count, or progress-toward-hotter framing.
-var TIER_AMBIANCE_LABEL = { tease: "Tease 😏", foreplay: "Foreplay 🔥", dirty: "Dirty 😈" };
+var TIER_AMBIANCE_LABEL = { tease: "Tease", foreplay: "Foreplay", dirty: "Dirty" };
 
 function updateHeatAmbianceUI() {
   updateTurnUpHeatButtons();
@@ -2254,7 +2305,8 @@ function updateHeatAmbianceUI() {
   [document.getElementById("heatAmbianceTruth"), document.getElementById("heatAmbianceWheel")].forEach(function (el) {
     if (!el) return;
     if (!synced) { el.classList.add("hidden"); return; }
-    el.innerText = "🕯 " + (TIER_AMBIANCE_LABEL[sessionHeatCeiling] || sessionHeatCeiling);
+    el.innerHTML = "🕯 " + gameplayIcon(sessionHeatCeiling, "ambiance-icon", "", true) +
+      (TIER_AMBIANCE_LABEL[sessionHeatCeiling] || sessionHeatCeiling);
     el.classList.remove("hidden");
   });
 }
@@ -2546,6 +2598,7 @@ async function initPersonalizePage() {
   renderPersonalizeTagChips();
   renderPersonalizeList();
   window.setPersonalizeView(personalizeView);
+  refreshTierSelectIcons();
 }
 
 function getPersonalizeTier() {
@@ -3158,6 +3211,7 @@ window.addEventListener("load", function () {
   updateScoreDisplay();
   updateNameDisplays();
   updateDrinkModeUI();
+  refreshTierSelectIcons();
   if (typeof updateSoundMuteUI === "function") updateSoundMuteUI();
   if (typeof recordHomeVisit === "function") recordHomeVisit();
   if (typeof renderHomeHero === "function") renderHomeHero();

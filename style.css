@@ -3070,6 +3070,63 @@ hr {
   box-shadow: none;
 }
 
+/* ========================= */
+/* GAMEPLAY ICONS            */
+/* ========================= */
+/* Inline replacements for the emoji markers rendered via GAMEPLAY_ICONS /
+   gameplayIcon() in script.js — restrained by design (no glow, no
+   oversizing), sized to sit beside the text each one accompanies. */
+
+.tier-select-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tier-select-icon-img {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.heat-btn-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.ambiance-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  margin: 0 3px;
+}
+
+/* Identity markers, so they're allowed to run a little larger than the
+   other inline icons — vertical-align:middle keeps the score row's
+   baseline aligned even though the images are taller than the text. */
+.player-medallion-icon {
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  margin: 0 4px;
+}
+
+.action-btn-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.nav-link-icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
 /* ---- Unlock ceremony ---- */
 /* Full-screen, center-stage moment on the tag_unlocked event — the tag
    name burns into view, echoing the same rose-gold/ember language as

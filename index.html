@@ -351,7 +351,7 @@
 <div id="menu" class="menu">
   <a onclick="showPage('home')">Home</a>
   <a onclick="showPage('truth')">Truth or Dare</a>
-  <a onclick="showPage('personalize')">Personalize&nbsp;💌</a>
+  <a onclick="showPage('personalize')"><img class="nav-link-icon" src="assets/icons/gameplay/personalize-card-quill@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'💌')">Personalize</a>
   <a onclick="showPage('roleplay')">Roleplay</a>
   <a onclick="showPage('positions')">Positions</a>
   <a onclick="showPage('wheel')">Spin the Wheel</a>
@@ -518,29 +518,33 @@
   <h1>Truth or Dare</h1>
   <p id="truthConnIndicator" class="conn-indicator hidden"></p>
 
+<!-- Native <select> options can't render <img> icons, so the tier icon
+     set lives in this badge (kept in sync with the selection by
+     refreshTierSelectIcons()) rather than inside the <option>s below. -->
 <div class="heat-tier-row">
-  <select id="tierSelect">
+  <span id="tierSelectIcon" class="tier-select-icon"></span>
+  <select id="tierSelect" onchange="refreshTierSelectIcons()">
     <option value="tease">Tease 😏</option>
     <option value="foreplay">Foreplay 🔥</option>
     <option value="dirty">Dirty 😈</option>
   </select>
   <span id="heatAmbianceTruth" class="heat-ambiance hidden"></span>
 </div>
-<button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat? 🔥</button>
+<button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
 
 <br>
 
   <h3 style="text-align:center;">
-  <span id="player1Label">Him</span> 😎: <span id="johnScoreDisplay">0</span> 🔥 |
-  <span id="player2Label">Her</span> 💕: <span id="felicityScoreDisplay">0</span> 🔥
+  <span id="player1Label">Him</span> <img class="player-medallion-icon" src="assets/icons/gameplay/player-john-medallion@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😎')">: <span id="johnScoreDisplay">0</span> 🔥 |
+  <span id="player2Label">Her</span> <img class="player-medallion-icon" src="assets/icons/gameplay/player-felicity-medallion@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'💕')">: <span id="felicityScoreDisplay">0</span> 🔥
 </h3>
-  
-  <button onclick="resetGame()">New Game 🔄</button>
+
+  <button onclick="resetGame()"><img class="action-btn-icon" src="assets/icons/gameplay/new-game-refresh-card@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🔄')">New Game</button>
   <div style="margin:6px 0 2px;">
-    <button id="drinkModeBtn" onclick="toggleDrinkMode()" class="drink-mode-toggle">Drink Mode 🍺</button>
-    <button id="matchedOnlyBtn" onclick="toggleMatchedOnly()" class="drink-mode-toggle hidden">Matched Only 💕</button>
+    <button id="drinkModeBtn" onclick="toggleDrinkMode()" class="drink-mode-toggle"><img class="action-btn-icon" src="assets/icons/gameplay/drink-mode-coupe@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🍺')">Drink Mode</button>
+    <button id="matchedOnlyBtn" onclick="toggleMatchedOnly()" class="drink-mode-toggle hidden"><img class="action-btn-icon" src="assets/icons/gameplay/matched-only-hearts@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'💕')">Matched Only</button>
   </div>
-  <p class="auth-link" onclick="showPage('personalize')">Personalize 💌</p>
+  <p class="auth-link" onclick="showPage('personalize')"><img class="action-btn-icon" src="assets/icons/gameplay/personalize-card-quill@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'💌')">Personalize</p>
 
   <div id="progressionPromptTruth" class="progression-prompt hidden">
     <div class="progression-prompt-text" id="progressionPromptTextTruth"></div>
@@ -551,7 +555,7 @@
   </div>
 
 <p id="turnDisplay" style="text-align:center; font-weight:bold; margin-bottom:4px;"></p>
-<div id="drinkModeIndicator" class="drink-mode-indicator" style="display:none;">🍺 Drink Mode</div>
+<div id="drinkModeIndicator" class="drink-mode-indicator" style="display:none;"><img class="action-btn-icon" src="assets/icons/gameplay/drink-mode-coupe@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🍺')">Drink Mode</div>
 
 <button id="truthBtn" onclick="getTruth()">Truth</button>
 <button id="dareBtn" onclick="getDare()">Dare</button>
@@ -670,7 +674,8 @@
       <button id="personalizeTabTruths" class="auth-tab" onclick="setPersonalizeTab('truth')">Truths</button>
     </div>
 
-    <select id="personalizeTierSelect" onchange="onPersonalizeTierChange()">
+    <span id="personalizeTierSelectIcon" class="tier-select-icon"></span>
+    <select id="personalizeTierSelect" onchange="onPersonalizeTierChange(); refreshTierSelectIcons();">
       <option value="tease">Tease 😏</option>
       <option value="foreplay">Foreplay 🔥</option>
       <option value="dirty">Dirty 😈</option>
@@ -819,14 +824,15 @@
   <p id="wheelConnIndicator" class="conn-indicator hidden"></p>
 
   <div class="heat-tier-row">
-    <select id="wheelTierSelect" onchange="wheelTierChanged()">
+    <span id="wheelTierSelectIcon" class="tier-select-icon"></span>
+    <select id="wheelTierSelect" onchange="wheelTierChanged(); refreshTierSelectIcons();">
       <option value="tease">Tease 😏</option>
       <option value="foreplay">Foreplay 🔥</option>
       <option value="dirty">Dirty 😈</option>
     </select>
     <span id="heatAmbianceWheel" class="heat-ambiance hidden"></span>
   </div>
-  <button type="button" id="turnUpHeatBtnWheel" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat? 🔥</button>
+  <button type="button" id="turnUpHeatBtnWheel" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>
 
   <p id="wheelTurnDisplay" class="wheel-turn-display"></p>
   <p id="wheelScoreDisplay" class="wheel-score-display hidden"></p>
