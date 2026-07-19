@@ -4,7 +4,7 @@ window.showPage = function (pageId) {
     sections[i].classList.remove("active");
   }
   document.getElementById(pageId).classList.add("active");
-  document.getElementById("menu").style.left = "-260px";
+  document.getElementById("menu").classList.remove("menu-open");
   if (pageId === "account" && typeof renderAccountPage === "function") {
     renderAccountPage();
   }
@@ -808,10 +808,10 @@ function getSelectedTier() {
 window.toggleMenu = function () {
   const menu = document.getElementById("menu");
   if (!menu) { console.log("Menu not found"); return; }
-  if (menu.style.left === "0px") {
-    menu.style.left = "-260px";
+  if (menu.classList.contains("menu-open")) {
+    menu.classList.remove("menu-open");
   } else {
-    menu.style.left = "0px";
+    menu.classList.add("menu-open");
     markMenuDiscovered();
   }
 };
@@ -831,7 +831,7 @@ function showPage(pageId) {
     sections[i].classList.remove("active");
   }
   document.getElementById(pageId).classList.add("active");
-  document.getElementById("menu").style.left = "-260px";
+  document.getElementById("menu").classList.remove("menu-open");
 }
 
 function getCardText(card) {
@@ -3150,7 +3150,7 @@ window.submitOnboarding = function () {
 window.updateNames = function () {
   document.getElementById("p1Input").value = localStorage.getItem("player1Name") || "";
   document.getElementById("p2Input").value = localStorage.getItem("player2Name") || "";
-  document.getElementById("menu").style.left = "-260px";
+  document.getElementById("menu").classList.remove("menu-open");
   document.getElementById("onboarding").classList.remove("hidden");
 };
 
@@ -3539,10 +3539,21 @@ function genRoundId() {
   return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
+// Also keeps cardBalance (the separate spendable-currency economy — see
+// computeCardBalanceFromEvents) current as points come in live, not just
+// on a full rebuild — every points-affecting event already funnels
+// through this one function, local or remote, so Buy button affordability
+// unlocks the instant a player's balance crosses a card's cost, mid-round.
 function applySyncScoreDelta(userId, delta) {
   if (!userId || !delta) return;
-  if (userId === gameSyncMyId()) syncScores.mine = Math.max(0, syncScores.mine + delta);
-  else syncScores.partner = Math.max(0, syncScores.partner + delta);
+  if (userId === gameSyncMyId()) {
+    syncScores.mine = Math.max(0, syncScores.mine + delta);
+    cardBalance.mine = Math.max(0, cardBalance.mine + delta);
+    renderCardShop();
+  } else {
+    syncScores.partner = Math.max(0, syncScores.partner + delta);
+    cardBalance.partner = Math.max(0, cardBalance.partner + delta);
+  }
   updateScoreDisplay();
   updateWheelScoreDisplay();
 }
@@ -4540,10 +4551,10 @@ window.toggleCardMenu = function () {
   var menu = document.getElementById("cardMenu");
   if (!menu) return;
   if (cardMenuOpen) {
-    menu.style.right = "-320px";
+    menu.classList.remove("card-menu-open");
     cardMenuOpen = false;
   } else {
-    menu.style.right = "0px";
+    menu.classList.add("card-menu-open");
     cardMenuOpen = true;
     renderCardShop();
   }
@@ -4560,7 +4571,7 @@ function updateCardMenuVisibility() {
   if (btn) btn.classList.toggle("hidden", !onTruthPage);
   if (!onTruthPage) {
     var menu = document.getElementById("cardMenu");
-    if (menu) menu.style.right = "-320px";
+    if (menu) menu.classList.remove("card-menu-open");
     cardMenuOpen = false;
   }
   if (onTruthPage) { renderCardShop(); renderHandTray(); }
@@ -4579,7 +4590,7 @@ function updateCardMenuVisibility() {
 
 function isLeftMenuOpen() {
   var menu = document.getElementById("menu");
-  return !!menu && menu.style.left === "0px";
+  return !!menu && menu.classList.contains("menu-open");
 }
 
 // Uses composedPath() rather than el.contains(e.target): a click on a
@@ -4700,7 +4711,7 @@ function renderCardShop() {
       row.innerHTML =
         "<div class=\"card-shop-item-head\">" +
           "<span class=\"card-shop-name\">" + def.name + "</span>" +
-          "<span class=\"card-shop-cost\">" + def.cost + " pts</span>" +
+          "<span class=\"card-shop-cost" + (canAfford ? "" : " card-shop-cost-unaffordable") + "\">" + def.cost + " pts</span>" +
         "</div>" +
         "<div class=\"card-shop-effect\">" + def.effect + "</div>" +
         (owned > 0 ? "<div class=\"card-shop-owned\">You have " + owned + "</div>" : "") +
