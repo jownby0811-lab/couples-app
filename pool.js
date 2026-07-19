@@ -107,13 +107,26 @@
   }
 
   // Positions pool: difficulty-mapped from tier, falling back to the
-  // full list if that leaves nothing. Identical to the wheel's old
-  // inline diffMap filter — positions have never respected gender,
-  // preferences, or Matched Only.
-  function getPositionPool(tier) {
+  // full list if that leaves nothing — identical to the wheel's old
+  // inline diffMap filter for that part. Positions have never respected
+  // gender or the general preference/Matched Only filter (see
+  // filterByPreference), but the Wheel's Position segment routes through
+  // matchedOnly=true specifically, which DOES apply here — narrowing to
+  // positions in itemMutualMatches.position (id-keyed, since positions
+  // are a single flat list with no tier dimension, unlike dares/truths).
+  // No fallback-if-empty for that filter: a couple with zero mutual
+  // position matches should see a genuinely empty pool (the Wheel's
+  // eligibility check needs to tell the two cases apart), not silently
+  // fall back to an unmatched position.
+  function getPositionPool(tier, matchedOnly) {
     var fullList = positionsData;
     var items = fullList.filter(function (p) { return p.difficulty === WHEEL_DIFFICULTY_BY_TIER[tier]; });
     if (!items.length) items = fullList;
+    if (matchedOnly) {
+      items = items.filter(function (p) {
+        return Object.prototype.hasOwnProperty.call(itemMutualMatches.position, String(p.id));
+      });
+    }
     return { items: items, fullList: fullList };
   }
 
@@ -127,7 +140,10 @@
   //                       narrows to "not rated no". Both only ever apply for
   //                       couple-linked users (see filterByPreference) — solo/unlinked
   //                       always get the unfiltered list, exactly as before this refactor.
-  //                       Ignored for mode: 'position'.
+  //                       For mode: 'position' only opts.matchedOnly is honored (true
+  //                       narrows to itemMutualMatches.position, matching the Wheel's
+  //                       Position segment; false/omitted leaves positions unfiltered by
+  //                       preference, as before) — there's no "not rated no" position mode.
   // opts.matchedOnlyStrict  Selects the stricter mutual-match check (`=== true` instead of
   //                       hasOwnProperty) — pass true only from the Wildcard picker, which
   //                       used that check pre-refactor. See filterByPreference's comment.
@@ -135,13 +151,19 @@
   //                       The Wildcard picker and the Spin Wheel never applied this —
   //                       pass false to preserve that.
   // opts.respectPreferences Whether to apply preference/Matched Only filtering at all.
-  //                       Default true. The Spin Wheel's dare pool never applied this
-  //                       (it only matches by segment tag) — pass false to preserve that.
+  //                       Default true. The Spin Wheel's dare pool goes through this too
+  //                       (its Wildcard picker used to be the one exception — no longer;
+  //                       every wheel draw routes through the same mutual-preference
+  //                       filter Truth or Dare's own draws use).
   // opts.requireTag       Dare-only. If set, narrows to dares carrying this tag — the Spin
   //                       Wheel's per-segment category match. If combined with
   //                       unlockedTags and that leaves nothing playable, the tag
   //                       requirement is dropped before the lock is (see below) — the
-  //                       wheel always shows *something*, but never a locked dare.
+  //                       wheel always shows *something* when it actually draws, but never
+  //                       a locked dare. opts.strictTag disables that drop (returns
+  //                       genuinely empty instead) — used only by the Wheel's eligibility
+  //                       check, which needs to detect "nothing tagged this" as distinct
+  //                       from "the wheel found something to show anyway".
   // opts.heatCeiling      Truth/dare-only (ignored for mode: 'position' — the Wheel's own
   //                       tier selector is the ceiling-gated choice upstream of that pool).
   //                       The couple's session heat ceiling — a tier name. If `tier` is
@@ -166,7 +188,7 @@
     var tier = opts.tier;
 
     if (mode === "position") {
-      return getPositionPool(tier);
+      return getPositionPool(tier, opts.matchedOnly);
       // heatCeiling / unlockedTags: reserved / dare-only, intentionally unused here.
     }
 
@@ -198,6 +220,13 @@
         var tagAndUnlocked = filterByUnlockedTags(tagMatched, unlockedTags);
         if (tagAndUnlocked.length) {
           items = tagAndUnlocked;
+        } else if (opts.strictTag) {
+          // The Wheel's eligibility check (opts.strictTag) needs to tell
+          // "genuinely nothing tagged this at this tier" apart from "the
+          // wheel found something to show anyway" — the fallback below
+          // exists precisely to blur that distinction for the actual
+          // draw, so it has to be skippable here.
+          items = [];
         } else {
           // Nothing satisfies both the segment tag and the lock — drop
           // the tag requirement (matches the pre-progression "fall back

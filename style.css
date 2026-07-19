@@ -2303,6 +2303,27 @@ hr {
   filter: saturate(0.55) brightness(0.85);
 }
 
+/* A segment with nothing currently playable (see refreshWheelEligibility)
+   — dimmed like .wheel-segment-dim but persistent regardless of landing
+   state, and tappable for a reason (see the click listener added in
+   buildWheelSvg) rather than just decorative. */
+.wheel-segment-ineligible {
+  cursor: pointer;
+}
+
+.wheel-segment-ineligible .wheel-segment-fill {
+  opacity: 0.32;
+  filter: saturate(0.35) brightness(0.7);
+}
+
+.wheel-segment-ineligible .wheel-segment-label {
+  opacity: 0.45;
+}
+
+.wheel-segment-ineligible .wheel-segment-glyph-img {
+  opacity: 0.4;
+}
+
 .wheel-divider {
   stroke: rgba(201,169,122,0.4);
   stroke-width: 1.4;
@@ -2379,7 +2400,8 @@ hr {
 .wheel-result-teaser {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   max-width: 380px;
   margin: 10px auto 0;
   padding: 12px 16px;
@@ -2430,6 +2452,63 @@ hr {
   font-family: 'Poppins', sans-serif;
   font-size: 12.5px;
   color: rgba(255,245,247,0.65);
+}
+
+/* Primary action — resolves the actual routed draw for the landed
+   segment (see performWheelDraw). Performer-only when synced; the judge
+   sees .wheel-result-teaser-wait instead (see showWheelResultTeaser). */
+.wheel-result-teaser-draw-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,169,122,0.5);
+  background: linear-gradient(135deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
+  color: #12070d;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.wheel-result-teaser-draw-btn.hidden {
+  display: none;
+}
+
+.wheel-result-teaser-wait {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: 'Poppins', sans-serif;
+  font-size: 12px;
+  font-style: italic;
+  color: rgba(255,245,247,0.55);
+  text-align: right;
+  max-width: 120px;
+}
+
+.wheel-result-teaser-wait.hidden {
+  display: none;
+}
+
+/* Shown when fewer than 3 segments are currently eligible — nudges
+   toward Personalize rather than spinning a mostly-dead wheel. */
+.wheel-eligibility-notice {
+  max-width: 380px;
+  margin: 8px auto 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(255,245,247,0.04);
+  border: 1px solid rgba(255,245,247,0.1);
+  color: rgba(255,245,247,0.6);
+  font-family: 'Poppins', sans-serif;
+  font-size: 12px;
+  text-align: center;
+}
+
+.wheel-eligibility-notice.hidden {
+  display: none;
 }
 
 #wheelSpinBtn {
