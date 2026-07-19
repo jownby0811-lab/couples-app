@@ -28,7 +28,8 @@ body::before {
   background-repeat: no-repeat;
 }
 
-/* Top bar */
+/* Top bar — a slim nav strip (~56-64px total); only the wordmark reads
+   large, the bar itself just hugs it. */
 .topbar {
   background: rgba(20, 20, 24, 0.95);
   padding: 16px;
@@ -41,7 +42,8 @@ body::before {
 }
 
 .menu-btn {
-  font-size: 60px;
+  font-size: 26px;
+  line-height: 1;
   cursor: pointer;
   background: linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%);
   -webkit-background-clip: text;
@@ -1878,10 +1880,12 @@ hr {
 /* POWER CARDS               */
 /* ========================= */
 /* Right-side shop menu, mirroring .menu/.menu-btn but sliding in from
-   the opposite edge — visible only on Truth or Dare while synced. */
+   the opposite edge — always visible on Truth or Dare (locked teaser
+   when solo/unlinked; the real shop once synced). */
 
 .card-menu-btn {
-  font-size: 60px;
+  font-size: 26px;
+  line-height: 1;
   cursor: pointer;
   background: linear-gradient(90deg, #c8cdd6 0%, #c9a97a 57%, #c9a97a 100%);
   -webkit-background-clip: text;
