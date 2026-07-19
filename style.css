@@ -766,7 +766,6 @@ hr {
   }
 }
 
-#tierSelect,
 #personalizeTierSelect {
   padding: 10px 16px;
   border-radius: 14px;
@@ -3125,6 +3124,112 @@ hr {
   height: 20px;
   vertical-align: middle;
   margin-right: 8px;
+}
+
+/* ========================= */
+/* TIER DROPDOWN (Truth or Dare) */
+/* ========================= */
+/* Custom listbox replacing the native <select> — a native <option>
+   can't render an <img>, so this is the only tier picker in the app
+   that shows its icons inline in both the closed and open states. The
+   trigger keeps the same pill look #tierSelect used to have; the open
+   panel follows the app's midnight-navy/rose-gold language (see .menu,
+   .card-menu). Logic lives in the truthTier*/selectTruthTier functions
+   in script.js. */
+
+.tier-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.tier-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  margin: 10px;
+  border-radius: 14px;
+  background: linear-gradient(#24151d, #24151d) padding-box,
+              linear-gradient(90deg, #c9a97a 0%, #c9a97a 43%, #b8bcc4 68%, #c8cdd6 100%) border-box;
+  color: white;
+  border: 1.5px solid transparent;
+  font-size: 16px;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+}
+
+.tier-dropdown-trigger:hover {
+  transform: none;
+}
+
+.tier-dropdown-trigger-content {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tier-dropdown-chevron {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #c9a97a;
+  transition: transform 0.15s;
+}
+
+.tier-dropdown-trigger[aria-expanded="true"] .tier-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.tier-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 170px;
+  max-width: calc(100vw - 24px);
+  background: #171015;
+  border: 1.5px solid rgba(201, 169, 122, 0.4);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  margin: 0;
+  list-style: none;
+  z-index: 8;
+}
+
+.tier-dropdown-panel.hidden {
+  display: none;
+}
+
+.tier-dropdown-option {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: #fff5f7;
+  font-size: 15px;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  outline: none;
+}
+
+.tier-dropdown-option:hover,
+.tier-dropdown-option:focus {
+  background: rgba(201, 169, 122, 0.12);
+}
+
+.tier-dropdown-option-selected {
+  background: rgba(201, 169, 122, 0.18);
+  color: #c9a97a;
+  font-weight: 600;
+}
+
+/* Locked (above the session's heat ceiling) — dimmed and inert, same
+   rule the native <select>'s opt.disabled enforced. */
+.tier-dropdown-option-locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ---- Unlock ceremony ---- */
