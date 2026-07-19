@@ -518,16 +518,33 @@
   <h1>Truth or Dare</h1>
   <p id="truthConnIndicator" class="conn-indicator hidden"></p>
 
-<!-- Native <select> options can't render <img> icons, so the tier icon
-     set lives in this badge (kept in sync with the selection by
-     refreshTierSelectIcons()) rather than inside the <option>s below. -->
+<!-- Custom listbox — a native <select>'s options can't render <img>
+     icons, so this replaces it entirely (see truthTier* functions in
+     script.js). getSelectedTier() now reads selectedTruthTier instead
+     of a DOM element, so every draw/sync/pool call site is unaffected. -->
 <div class="heat-tier-row">
-  <span id="tierSelectIcon" class="tier-select-icon"></span>
-  <select id="tierSelect" onchange="refreshTierSelectIcons()">
-    <option value="tease">Tease 😏</option>
-    <option value="foreplay">Foreplay 🔥</option>
-    <option value="dirty">Dirty 😈</option>
-  </select>
+  <div class="tier-dropdown" id="truthTierDropdown">
+    <button type="button" id="truthTierTrigger" class="tier-dropdown-trigger"
+            aria-haspopup="listbox" aria-expanded="false"
+            onclick="toggleTruthTierDropdown()" onkeydown="handleTruthTierTriggerKeydown(event)">
+      <span id="truthTierTriggerContent" class="tier-dropdown-trigger-content"></span>
+      <span class="tier-dropdown-chevron" aria-hidden="true">&#9662;</span>
+    </button>
+    <ul id="truthTierListbox" class="tier-dropdown-panel hidden" role="listbox" aria-label="Heat tier" onkeydown="handleTruthTierListboxKeydown(event)">
+      <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="tease" id="truthTierOpt-tease" onclick="selectTruthTier('tease')">
+        <img class="tier-select-icon-img" src="assets/icons/gameplay/tease-feather@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😏')">
+        <span>Tease</span>
+      </li>
+      <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="foreplay" id="truthTierOpt-foreplay" onclick="selectTruthTier('foreplay')">
+        <img class="tier-select-icon-img" src="assets/icons/gameplay/foreplay-flames@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'🔥')">
+        <span>Foreplay</span>
+      </li>
+      <li role="option" tabindex="-1" class="tier-dropdown-option" data-tier="dirty" id="truthTierOpt-dirty" onclick="selectTruthTier('dirty')">
+        <img class="tier-select-icon-img" src="assets/icons/gameplay/dirty-heart@64.png" alt="" aria-hidden="true" onerror="imgFallback(this,'😈')">
+        <span>Dirty</span>
+      </li>
+    </ul>
+  </div>
   <span id="heatAmbianceTruth" class="heat-ambiance hidden"></span>
 </div>
 <button type="button" id="turnUpHeatBtnTruth" class="turn-up-heat-btn hidden" onclick="proposeHeatUp()">Turn up the heat?</button>

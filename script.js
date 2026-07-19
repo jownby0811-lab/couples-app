@@ -832,8 +832,125 @@ function showStatus(message) {
   setTimeout(() => { status.style.opacity = "0"; }, 2000);
 }
 
+// ---- Truth or Dare tier dropdown (custom listbox) ----
+// Replaces the page's native <select> — every draw/sync/pool call site
+// already goes through getSelectedTier(), so backing it with this
+// variable instead of a DOM element's .value is a drop-in swap.
+var selectedTruthTier = "tease";
+var truthTierDropdownOpen = false;
+
 function getSelectedTier() {
-  return document.getElementById("tierSelect").value;
+  return selectedTruthTier;
+}
+
+function truthTierLabel(tier) {
+  return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
+
+function updateTruthTierTrigger() {
+  var content = document.getElementById("truthTierTriggerContent");
+  if (!content) return;
+  content.innerHTML = gameplayIcon(selectedTruthTier, "tier-select-icon-img", "", true) + truthTierLabel(selectedTruthTier);
+}
+
+function setSelectedTruthTier(tier) {
+  selectedTruthTier = tier;
+  updateTruthTierTrigger();
+  TIER_ORDER.forEach(function (t) {
+    var opt = document.getElementById("truthTierOpt-" + t);
+    if (!opt) return;
+    opt.setAttribute("aria-selected", String(t === tier));
+    opt.classList.toggle("tier-dropdown-option-selected", t === tier);
+  });
+}
+
+// Mirrors the disabled-option behavior the native <select> enforced —
+// called from updateTierSelectOptions() whenever the session's heat
+// ceiling changes.
+function updateTruthTierDropdownLocks(ceilingIdx) {
+  TIER_ORDER.forEach(function (t, idx) {
+    var opt = document.getElementById("truthTierOpt-" + t);
+    if (!opt) return;
+    var locked = idx > ceilingIdx;
+    opt.setAttribute("aria-disabled", String(locked));
+    opt.classList.toggle("tier-dropdown-option-locked", locked);
+  });
+}
+
+function selectTruthTier(tier) {
+  var opt = document.getElementById("truthTierOpt-" + tier);
+  if (opt && opt.getAttribute("aria-disabled") === "true") return; // locked, non-selectable
+  setSelectedTruthTier(tier);
+  closeTruthTierDropdown();
+}
+
+function openTruthTierDropdown() {
+  var panel = document.getElementById("truthTierListbox");
+  var trigger = document.getElementById("truthTierTrigger");
+  if (!panel || !trigger || truthTierDropdownOpen) return;
+  truthTierDropdownOpen = true;
+  panel.classList.remove("hidden");
+  trigger.setAttribute("aria-expanded", "true");
+  var current = document.getElementById("truthTierOpt-" + selectedTruthTier);
+  var target = (current && current.getAttribute("aria-disabled") !== "true")
+    ? current
+    : panel.querySelector('[role="option"]:not([aria-disabled="true"])');
+  if (target) target.focus();
+}
+
+// returnFocus defaults to true (Escape, selection); an outside tap
+// passes false so focus goes wherever the user actually tapped instead
+// of being yanked back to the trigger.
+function closeTruthTierDropdown(returnFocus) {
+  var panel = document.getElementById("truthTierListbox");
+  var trigger = document.getElementById("truthTierTrigger");
+  if (!panel || !trigger || !truthTierDropdownOpen) return;
+  truthTierDropdownOpen = false;
+  panel.classList.add("hidden");
+  trigger.setAttribute("aria-expanded", "false");
+  if (returnFocus !== false) trigger.focus();
+}
+
+function toggleTruthTierDropdown() {
+  if (truthTierDropdownOpen) closeTruthTierDropdown();
+  else openTruthTierDropdown();
+}
+
+function handleTruthTierTriggerKeydown(e) {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!truthTierDropdownOpen) openTruthTierDropdown();
+  }
+}
+
+function handleTruthTierListboxKeydown(e) {
+  var options = TIER_ORDER.map(function (t) { return document.getElementById("truthTierOpt-" + t); }).filter(Boolean);
+  var enabled = options.filter(function (o) { return o.getAttribute("aria-disabled") !== "true"; });
+  var idx = enabled.indexOf(document.activeElement);
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    var next = enabled[idx === -1 ? 0 : Math.min(idx + 1, enabled.length - 1)];
+    if (next) next.focus();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    var prev = enabled[idx === -1 ? 0 : Math.max(idx - 1, 0)];
+    if (prev) prev.focus();
+  } else if (e.key === "Home") {
+    e.preventDefault();
+    if (enabled[0]) enabled[0].focus();
+  } else if (e.key === "End") {
+    e.preventDefault();
+    if (enabled[enabled.length - 1]) enabled[enabled.length - 1].focus();
+  } else if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    var focused = document.activeElement;
+    if (focused && focused.dataset && focused.dataset.tier) selectTruthTier(focused.dataset.tier);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeTruthTierDropdown();
+  } else if (e.key === "Tab") {
+    closeTruthTierDropdown(false);
+  }
 }
 
 window.toggleMenu = function () {
@@ -2243,25 +2360,35 @@ function getHeatCeilingForPool() {
 function updateTierSelectOptions() {
   var ceiling = getHeatCeilingForPool();
   var ceilingIdx = ceiling ? TIER_ORDER.indexOf(ceiling) : TIER_ORDER.length - 1;
-  [document.getElementById("tierSelect"), document.getElementById("wheelTierSelect")].forEach(function (sel) {
-    if (!sel) return;
-    Array.prototype.forEach.call(sel.options, function (opt) {
+
+  var wheelSel = document.getElementById("wheelTierSelect");
+  if (wheelSel) {
+    Array.prototype.forEach.call(wheelSel.options, function (opt) {
       opt.disabled = TIER_ORDER.indexOf(opt.value) > ceilingIdx;
     });
-    if (TIER_ORDER.indexOf(sel.value) > ceilingIdx) {
-      sel.value = TIER_ORDER[ceilingIdx];
+    if (TIER_ORDER.indexOf(wheelSel.value) > ceilingIdx) {
+      wheelSel.value = TIER_ORDER[ceilingIdx];
     }
-  });
+  }
+
+  // Truth or Dare's custom listbox (see selectTruthTier etc.) — same
+  // lock + clamp rule the native <select> enforced.
+  updateTruthTierDropdownLocks(ceilingIdx);
+  if (TIER_ORDER.indexOf(selectedTruthTier) > ceilingIdx) {
+    setSelectedTruthTier(TIER_ORDER[ceilingIdx]);
+  }
+
   refreshTierSelectIcons();
 }
 
-// Keeps each tier <select>'s companion icon badge (see GAMEPLAY_ICONS)
-// in sync with its current value — covers both user-driven onchange
-// events and the programmatic ceiling clamp above, which sets .value
-// directly and so never fires a change event on its own.
+// Keeps each remaining tier <select>'s companion icon badge (see
+// GAMEPLAY_ICONS) in sync with its current value — covers both
+// user-driven onchange events and the programmatic ceiling clamp above,
+// which sets .value directly and so never fires a change event on its
+// own. Truth or Dare's own trigger icon is handled by
+// updateTruthTierTrigger() instead, since it isn't a <select>.
 function refreshTierSelectIcons() {
   [
-    ["tierSelect", "tierSelectIcon"],
     ["personalizeTierSelect", "personalizeTierSelectIcon"],
     ["wheelTierSelect", "wheelTierSelectIcon"]
   ].forEach(function (pair) {
@@ -3212,6 +3339,7 @@ window.addEventListener("load", function () {
   updateNameDisplays();
   updateDrinkModeUI();
   refreshTierSelectIcons();
+  setSelectedTruthTier(selectedTruthTier);
   if (typeof updateSoundMuteUI === "function") updateSoundMuteUI();
   if (typeof recordHomeVisit === "function") recordHomeVisit();
   if (typeof renderHomeHero === "function") renderHomeHero();
@@ -4674,12 +4802,20 @@ document.addEventListener("click", function (e) {
       window.toggleCardMenu();
     }
   }
+  if (typeof truthTierDropdownOpen !== "undefined" && truthTierDropdownOpen) {
+    var tierPanel = document.getElementById("truthTierListbox");
+    var tierTrigger = document.getElementById("truthTierTrigger");
+    if (!isInside(tierPanel) && !isInside(tierTrigger)) {
+      closeTruthTierDropdown(false);
+    }
+  }
 });
 
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
   if (isLeftMenuOpen()) window.toggleMenu();
   if (typeof cardMenuOpen !== "undefined" && cardMenuOpen) window.toggleCardMenu();
+  if (typeof truthTierDropdownOpen !== "undefined" && truthTierDropdownOpen) closeTruthTierDropdown();
 });
 
 // Swipe toward the menu's own hinge edge closes it. Listens only on the
