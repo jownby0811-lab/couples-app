@@ -22,15 +22,20 @@
 
   // ---- internal filter primitives ----
 
-  // Gender filter: only cards tagged for the current player (or neutral).
-  // Identical to the old top-level getFilteredList().
-  function filterByGender(list) {
+  // Gender tag = performer's gender. Drawer = performer (see
+  // game_events.performer_user_id). Do not filter by partner's gender.
+  // `gender` is the drawer's own resolved gender ('male'/'female'),
+  // passed in explicitly by the caller (script.js's getDrawerGender()) —
+  // pool.js has no opinion on whose turn it is or who's logged in, it
+  // just filters for whatever gender it's told. null/undefined (no
+  // profile gender set yet) narrows to neutral-tagged content only,
+  // same as an unrecognized value would.
+  function filterByGender(list, gender) {
     return list.filter(function (card) {
       var genders = getCardGender(card);
-      if (currentPlayer === "john") {
-        return genders.indexOf("male") !== -1 || genders.indexOf("neutral") !== -1;
-      }
-      return genders.indexOf("female") !== -1 || genders.indexOf("neutral") !== -1;
+      if (gender === "male") return genders.indexOf("male") !== -1 || genders.indexOf("neutral") !== -1;
+      if (gender === "female") return genders.indexOf("female") !== -1 || genders.indexOf("neutral") !== -1;
+      return genders.indexOf("neutral") !== -1;
     });
   }
 
@@ -147,9 +152,15 @@
   // opts.matchedOnlyStrict  Selects the stricter mutual-match check (`=== true` instead of
   //                       hasOwnProperty) — pass true only from the Wildcard picker, which
   //                       used that check pre-refactor. See filterByPreference's comment.
-  // opts.respectGender    Whether to apply the currentPlayer gender filter. Default true.
-  //                       The Wildcard picker and the Spin Wheel never applied this —
-  //                       pass false to preserve that.
+  // opts.gender           The drawer's resolved gender ('male'/'female'), or null/undefined
+  //                       if unset — see filterByGender's comment above for the
+  //                       performer-gender convention. Ignored when opts.respectGender is
+  //                       false. Every dare/truth call site is expected to pass this
+  //                       explicitly now (script.js's getDrawerGender()); there's no
+  //                       implicit global fallback here.
+  // opts.respectGender    Whether to apply the opts.gender filter at all. Default true.
+  //                       The power-card Wildcard picker never applied this — pass false
+  //                       to preserve that.
   // opts.respectPreferences Whether to apply preference/Matched Only filtering at all.
   //                       Default true. The Spin Wheel's dare pool goes through this too
   //                       (its Wildcard picker used to be the one exception — no longer;
@@ -212,7 +223,7 @@
       return { items: [], fullList: fullList };
     }
     var items = fullList;
-    if (respectGender) items = filterByGender(items);
+    if (respectGender) items = filterByGender(items, opts.gender);
 
     if (mode === "dare") {
       if (requireTag) {

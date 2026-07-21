@@ -114,7 +114,7 @@
   // heatMode (optional): carries the local onboarding heat-mode choice
   // (see selectOnboardingHeatMode in script.js) onto the new profile,
   // same best-effort pattern as displayName below.
-  async function signUp(email, password, displayName, heatMode) {
+  async function signUp(email, password, displayName, heatMode, gender) {
     if (!client) throw new Error("Sign-up isn't available right now.");
     var { data, error } = await client.auth.signUp({
       email: email,
@@ -128,6 +128,9 @@
     }
     if (state.session && heatMode) {
       try { await setHeatMode(heatMode); } catch (e) { console.warn("Failed to persist heat mode after signup", e); }
+    }
+    if (state.session && gender) {
+      try { await setGender(gender); } catch (e) { console.warn("Failed to persist gender after signup", e); }
     }
     await refreshMyCouple();
     notify();
@@ -182,7 +185,7 @@
     try {
       var { data, error } = await client
         .from("profiles")
-        .select("display_name, heat_mode")
+        .select("display_name, heat_mode, gender")
         .eq("id", userId || state.session.user.id)
         .maybeSingle();
       if (error) throw error;
@@ -212,6 +215,18 @@
       .update({ heat_mode: mode })
       .eq("id", state.session.user.id);
     if (error) throw new Error(friendlyError(error, "Couldn't save your heat mode. Please try again."));
+  }
+
+  // 'male' or 'female', nullable — per-user, own profile only. Same direct
+  // update pattern as setHeatMode. Drives gender-tagged card filtering
+  // (see pool.js) — null leaves gender-tagged content excluded until set.
+  async function setGender(gender) {
+    if (!client || !state.session) throw new Error("Please sign in first.");
+    var { error } = await client
+      .from("profiles")
+      .update({ gender: gender })
+      .eq("id", state.session.user.id);
+    if (error) throw new Error(friendlyError(error, "Couldn't save your gender. Please try again."));
   }
 
   // ---- Couple linking ----
@@ -537,6 +552,7 @@
     getProfile: getProfile,
     updateDisplayName: updateDisplayName,
     setHeatMode: setHeatMode,
+    setGender: setGender,
     createCouple: createCouple,
     joinCouple: joinCouple,
     leaveCouple: leaveCouple,

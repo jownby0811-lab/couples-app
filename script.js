@@ -907,6 +907,41 @@ var adaptiveHeatPanelOpenState = { Truth: false, Wheel: false };
 var myHeatMode = localStorage.getItem("heatMode") || "manual";
 var partnerHeatMode = "manual";
 
+// null until set (see the onboarding/Account gender picker) — unlike
+// heat mode there's no sane default to fall back to, so null is a real,
+// expected, handled state (see getDrawerGender/maybeShowGenderNudge).
+// partnerGender is only ever consulted for the Reverse power card, where
+// the performer changes to the partner without a new draw (see
+// buildReversePayload) — every other draw filters by the drawer's own
+// gender, never the partner's.
+var myGender = null;
+var partnerGender = null;
+
+// The real gender to filter a draw by: the actual performer's account
+// gender when logged in (regardless of couple-link/sync state), falling
+// back to the legacy currentPlayer pass-the-phone toggle only for fully
+// logged-out local play, which has no account to carry a real gender.
+// Gender tag = performer's gender; the drawer IS the performer for every
+// call site except Reverse's new-performer check (see pool.js's
+// filterByGender comment for the canonical statement of this rule).
+function getDrawerGender() {
+  if (window.Backend && window.Backend.isLoggedIn()) {
+    if (!myGender && typeof maybeShowGenderNudge === "function") maybeShowGenderNudge();
+    return myGender;
+  }
+  return currentPlayer === "john" ? "male" : "female";
+}
+
+// Shown once ever per device the first time a logged-in, gender-unset
+// player's pool gets narrowed to neutral-only content — nudges them to
+// finish setup in Account rather than silently wondering why the deck
+// feels thin.
+function maybeShowGenderNudge() {
+  if (localStorage.getItem("genderNudgeShown") === "true") return;
+  localStorage.setItem("genderNudgeShown", "true");
+  showStatus("Set your gender in Account to see prompts written for you 🎯");
+}
+
 function truthTierLabel(tier) {
   return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
@@ -1995,7 +2030,7 @@ function getTruth() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("truth"); return; }
   let tier = getEffectiveHeatTier();
-  let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly, heatCeiling: getHeatCeilingForPool() });
+  let pool = window.Pool.getPlayablePool({ mode: "truth", tier: tier, matchedOnly: matchedOnly, heatCeiling: getHeatCeilingForPool(), gender: getDrawerGender() });
   let fullList = pool.fullList;
   let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
@@ -2023,7 +2058,7 @@ function getDare() {
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   if (isSyncActive()) { syncDrawCard("dare"); return; }
   let tier = getEffectiveHeatTier();
-  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
+  let pool = window.Pool.getPlayablePool({ mode: "dare", tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool(), gender: getDrawerGender() });
   let fullList = pool.fullList;
   let list = pool.items;
   if (list.length === 0) { showStatus("No cards available for this player 😅"); return; }
@@ -2317,7 +2352,7 @@ function syncDrawCard(mode) {
   if (typeof hideInGameRatingStrip === "function") hideInGameRatingStrip();
   if (typeof hideBurnOverlay === "function") hideBurnOverlay();
   var tier = getEffectiveDrawTier(getEffectiveHeatTier());
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool(), gender: getDrawerGender() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) {
@@ -3601,6 +3636,20 @@ window.selectOnboardingHeatMode = function (mode) {
   if (manualCard) manualCard.classList.toggle("heat-mode-card-selected", mode === "manual");
 };
 
+// No default — unlike heat mode there's no sane pre-selection for
+// gender, so this stays null until the player actually picks one. A
+// null choice is a legitimate, handled state (see getDrawerGender);
+// submitOnboarding doesn't block on it being set.
+var onboardingGenderChoice = null;
+
+window.selectOnboardingGender = function (gender) {
+  onboardingGenderChoice = gender;
+  var maleCard = document.getElementById("onboardingGenderMale");
+  var femaleCard = document.getElementById("onboardingGenderFemale");
+  if (maleCard) maleCard.classList.toggle("heat-mode-card-selected", gender === "male");
+  if (femaleCard) femaleCard.classList.toggle("heat-mode-card-selected", gender === "female");
+};
+
 window.submitOnboarding = function () {
   let p1 = document.getElementById("p1Input").value.trim();
   let p2 = document.getElementById("p2Input").value.trim();
@@ -3619,6 +3668,14 @@ window.submitOnboarding = function () {
       // Account page toggle can retry the save later.
     });
   }
+  if (onboardingGenderChoice) {
+    myGender = onboardingGenderChoice;
+    if (window.Backend && window.Backend.isLoggedIn()) {
+      window.Backend.setGender(myGender).catch(function () {
+        // Same low-stakes handling as heat mode above — Account can retry.
+      });
+    }
+  }
   if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
 
   document.getElementById("onboarding").classList.add("hidden");
@@ -3630,6 +3687,7 @@ window.updateNames = function () {
   document.getElementById("p1Input").value = localStorage.getItem("player1Name") || "";
   document.getElementById("p2Input").value = localStorage.getItem("player2Name") || "";
   window.selectOnboardingHeatMode(myHeatMode === "adaptive" ? "adaptive" : "manual");
+  window.selectOnboardingGender(myGender);
   document.getElementById("menu").classList.remove("menu-open");
   document.getElementById("onboarding").classList.remove("hidden");
 };
@@ -3714,7 +3772,7 @@ window.handleSignUp = async function () {
   if (!name) { errEl.innerText = "Tell us what to call you."; return; }
   if (!email || !password) { errEl.innerText = "Enter your email and password."; return; }
   try {
-    await window.Backend.signUp(email, password, name, myHeatMode);
+    await window.Backend.signUp(email, password, name, myHeatMode, onboardingGenderChoice);
     renderAccountPage();
     if (!window.Backend.isInCouple()) {
       openCoupleChoiceModal();
@@ -3939,6 +3997,32 @@ function renderAccountHeatMode() {
   }
 }
 
+// Lets existing (pre-feature, currently-null) users set their gender
+// after the fact, same tab-toggle pattern as renderAccountHeatMode.
+function renderAccountGender() {
+  var maleBtn = document.getElementById("acctGenderMaleBtn");
+  var femaleBtn = document.getElementById("acctGenderFemaleBtn");
+  if (!maleBtn || !femaleBtn) return;
+  maleBtn.classList.toggle("active", myGender === "male");
+  femaleBtn.classList.toggle("active", myGender === "female");
+}
+
+function handleSetGender(gender) {
+  if (!window.Backend || !window.Backend.isLoggedIn()) return;
+  var err = document.getElementById("acctGenderError");
+  if (err) err.innerText = "";
+  window.Backend.setGender(gender)
+    .then(function () {
+      myGender = gender;
+      renderAccountGender();
+    })
+    .catch(function (e) {
+      var errEl = document.getElementById("acctGenderError");
+      if (errEl) errEl.innerText = (e && e.message) || "Couldn't update gender. Please try again.";
+    });
+}
+window.handleSetGender = handleSetGender;
+
 function handleSetHeatMode(mode) {
   if (!window.Backend || !window.Backend.isLoggedIn()) return;
   var err = document.getElementById("acctHeatModeError");
@@ -3977,6 +4061,7 @@ function renderAccountPage() {
     profileArea.classList.remove("hidden");
     renderAccountProfile();
     renderAccountHeatMode();
+    renderAccountGender();
     renderAccountCoupleArea();
     if (isSyncActive()) {
       refreshCoupleProgression().then(function () { renderAccountCoupleArea(); });
@@ -4157,6 +4242,7 @@ function handleGameBackendChange() {
     window.Backend.getProfile().then(function (p) {
       gameSyncMyName = (p && p.display_name) || "You";
       myHeatMode = (p && p.heat_mode) || "manual";
+      myGender = (p && p.gender) || null;
       applySyncVisibility();
       if (typeof renderHomeHero === "function") renderHomeHero();
       if (typeof refreshTruthTierModeUI === "function") refreshTruthTierModeUI();
@@ -4165,6 +4251,7 @@ function handleGameBackendChange() {
     if (partnerId) {
       window.Backend.getProfile(partnerId).then(function (p) {
         partnerHeatMode = (p && p.heat_mode) || "manual";
+        partnerGender = (p && p.gender) || null;
         if (typeof refreshTierReadout === "function") refreshTierReadout();
       });
     }
@@ -4172,6 +4259,8 @@ function handleGameBackendChange() {
     gameSyncMyName = "You";
     myHeatMode = "manual";
     partnerHeatMode = "manual";
+    myGender = null;
+    partnerGender = null;
   }
   reconcileGameSyncSubscription();
   if (typeof updateMatchedOnlyUI === "function") updateMatchedOnlyUI();
@@ -4906,7 +4995,30 @@ function buildReversePayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
   var partnerId = window.GameSync && window.GameSync.getPartnerId ? window.GameSync.getPartnerId() : null;
   if (!partnerId) return null;
-  return { roundId: syncTruthRound.roundId, newPerformerId: partnerId };
+  var payload = { roundId: syncTruthRound.roundId, newPerformerId: partnerId };
+  // The current card was drawn (and gender-filtered) for ME, the old
+  // performer. Reverse hands it to my partner instead — if it's tagged
+  // for a gender that isn't theirs, the exact same card is no longer
+  // valid content for them, so swap in a replacement from the same
+  // tier/mode pool that IS valid for their gender rather than bouncing
+  // an invalid card. A neutral (or already-matching) card bounces
+  // unchanged, same as before this feature.
+  var list = gameData[syncTruthRound.tier][syncTruthRound.mode === "truth" ? "truths" : "dares"];
+  var card = list[syncTruthRound.cardIndex];
+  var cardGenders = getCardGender(card);
+  var validForNewPerformer = partnerGender
+    ? (cardGenders.indexOf(partnerGender) !== -1 || cardGenders.indexOf("neutral") !== -1)
+    : cardGenders.indexOf("neutral") !== -1;
+  if (!validForNewPerformer) {
+    var pool = window.Pool.getPlayablePool({
+      mode: syncTruthRound.mode, tier: syncTruthRound.tier, matchedOnly: matchedOnly,
+      unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool(), gender: partnerGender
+    });
+    if (pool.items.length === 0) { showStatus("No matching card to bounce this to 😅"); return null; }
+    var replacement = pool.items[Math.floor(Math.random() * pool.items.length)];
+    payload.cardIndex = pool.fullList.indexOf(replacement);
+  }
+  return payload;
 }
 
 function buildDoubleDownPayload() {
@@ -4922,7 +5034,7 @@ function buildShieldPayload() {
 function buildRedrawPayload() {
   if (!syncTruthRound || syncTruthRound.myRole !== "performer") return null;
   var mode = syncTruthRound.mode, tier = getEffectiveDrawTier(syncTruthRound.tier);
-  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool() });
+  var pool = window.Pool.getPlayablePool({ mode: mode, tier: tier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool(), gender: getDrawerGender() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No fresh cards available to redraw 😅"); return null; }
@@ -4939,7 +5051,7 @@ function buildSpicePayload() {
   // Upgrade one tier while under the session's heat ceiling; at the
   // ceiling, reroll within the current tier instead of upgrading past it.
   var newTier = (curIdx >= 0 && curIdx < ceilingIdx) ? TIER_ORDER[curIdx + 1] : syncTruthRound.tier;
-  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: heatCeiling });
+  var pool = window.Pool.getPlayablePool({ mode: "dare", tier: newTier, matchedOnly: matchedOnly, unlockedTags: getAllowedTagsForPool(), heatCeiling: heatCeiling, gender: getDrawerGender() });
   var fullList = pool.fullList;
   var list = pool.items;
   if (list.length === 0) { showStatus("No cards available at that tier 😅"); return null; }
@@ -4965,6 +5077,7 @@ function applyReverseEffect(payload) {
   if (!syncTruthRound || syncTruthRound.roundId !== payload.roundId) return;
   syncTruthRound.performerId = payload.newPerformerId;
   syncTruthRound.myRole = payload.newPerformerId === gameSyncMyId() ? "performer" : "judge";
+  if (payload.cardIndex != null) syncTruthRound.cardIndex = payload.cardIndex;
   var list = gameData[syncTruthRound.tier][syncTruthRound.mode === "truth" ? "truths" : "dares"];
   var card = list[syncTruthRound.cardIndex];
   renderSyncedCard(syncTruthRound.mode, syncTruthRound.tier, card, syncTruthRound.cardIndex, syncTruthRound.myRole === "judge");
@@ -5730,7 +5843,8 @@ function getWheelSegmentPool(seg, tier, strict) {
   if (seg.dynamicTag && !tag) return { items: [], fullList: [] };
   var opts = {
     mode: "dare", tier: tier, matchedOnly: matchedOnly,
-    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool()
+    unlockedTags: getAllowedTagsForPool(), heatCeiling: getHeatCeilingForPool(),
+    gender: getDrawerGender()
   };
   if (tag) opts.requireTag = tag;
   if (strict) opts.strictTag = true;
