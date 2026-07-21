@@ -344,6 +344,19 @@
       <p class="heat-mode-choice-note">You can change this anytime in Account.</p>
     </div>
 
+    <div class="heat-mode-choice">
+      <div class="heat-mode-choice-label">Your Gender</div>
+      <div class="heat-mode-cards">
+        <button type="button" class="heat-mode-card" id="onboardingGenderMale" onclick="selectOnboardingGender('male')">
+          <div class="heat-mode-card-title">Male</div>
+        </button>
+        <button type="button" class="heat-mode-card" id="onboardingGenderFemale" onclick="selectOnboardingGender('female')">
+          <div class="heat-mode-card-title">Female</div>
+        </button>
+      </div>
+      <p class="heat-mode-choice-note">Matches gendered prompts to you. You can set this anytime in Account.</p>
+    </div>
+
     <button onclick="submitOnboarding()">Let's Play 🎮</button>
   </div>
 </div>
@@ -1078,6 +1091,16 @@
         <button class="auth-tab" id="acctHeatModeAdaptiveBtn" onclick="handleSetHeatMode('adaptive')">Adaptive</button>
       </div>
       <p id="acctHeatModeError" class="auth-error"></p>
+    </div>
+
+    <div class="progression-mode-section">
+      <div class="progression-mode-label">Gender</div>
+      <p class="auth-sub small">Matches gendered prompts to you.</p>
+      <div class="auth-tabs progression-mode-tabs">
+        <button class="auth-tab" id="acctGenderMaleBtn" onclick="handleSetGender('male')">Male</button>
+        <button class="auth-tab" id="acctGenderFemaleBtn" onclick="handleSetGender('female')">Female</button>
+      </div>
+      <p id="acctGenderError" class="auth-error"></p>
     </div>
 
     <div class="pos-section-title">Your Couple</div>
