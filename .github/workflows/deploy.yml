@@ -1,0 +1,48 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stamp cache-busting version
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          BUILD_ID="${GITHUB_SHA::7}"
+          echo "Stamping __BUILD__ -> $BUILD_ID"
+          grep -rl '__BUILD__' --exclude-dir=.git . | while read -r file; do
+            sed -i "s/__BUILD__/$BUILD_ID/g" "$file"
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
