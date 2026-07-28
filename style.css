@@ -992,8 +992,13 @@ hr {
   backdrop-filter: blur(6px);
   z-index: 100;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: max(20px, env(safe-area-inset-top)) 0 max(20px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 #onboarding.hidden {
@@ -1001,6 +1006,7 @@ hr {
 }
 
 .onboarding-card {
+  margin: auto;
   background: linear-gradient(145deg, #170e14, #1e1520, #130c12);
   border: 1px solid rgba(201, 169, 122, 0.3);
   border-radius: 24px;
